@@ -1,5 +1,5 @@
 # Frequencies
-## A modern, stylish internet radio player. Simple, yet powerful. Decline the algorithm, and rediscover radio.
+## A modern, stylish internet radio player for Linux and Windows. Simple, yet powerful. Decline the algorithm, and rediscover radio.
 
 <img width="1467" height="1002" alt="Screenshot_20261018_182004" src="https://github.com/user-attachments/assets/7e057a12-ba5b-4a46-96ea-c40dfbf6b15e" />
 
@@ -16,7 +16,7 @@ On top of your typical radio apps that allow you to stream from URLs and browse 
 * Ability to create custom stations from local files, YouTube stations, Twitch streams, and iBroadcast libraries
 * Tags system for easily queuing your desired stations
 * Built in Shazam
-* A reguarly updated list of recommended radio stations that are hand picked by me, a human
+* A regularly updated list of recommended radio stations that are hand picked by me, a human
 * Per station equalizer options
 * Volume equalization across stations
 * Optional, immersive static to bridge the silent gap between stations
@@ -35,7 +35,5 @@ On top of your typical radio apps that allow you to stream from URLs and browse 
 <img width="984" height="1035" alt="Screenshot_20261018_183143" src="https://github.com/user-attachments/assets/02106067-a500-4c42-86b0-2f446517d07e" />
 
 <img width="1500" height="1002" alt="Screenshot_20261018_182655" src="https://github.com/user-attachments/assets/e0549d5d-e1c4-462e-911e-411bcd4ccd75" />
-
-Frequencies was designed to be run as an .appimage, but Windows support is currently in the works. 
 
 <img width="1500" height="1002" alt="Screenshot_20261018_182744" src="https://github.com/user-attachments/assets/ef244294-e423-4ffa-a48c-7eab5a50fce9" />
