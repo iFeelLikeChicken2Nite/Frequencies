@@ -1,0 +1,8 @@
+src/report_token.json
+src/talk_photos/
+photo-pack/
+venv/
+projectm-src/
+projectm-build/
+projectm-presets/
+*.AppImage
