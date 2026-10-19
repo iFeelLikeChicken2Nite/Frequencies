@@ -1,0 +1,9 @@
+Clippy companion (build 107, task 116)
+
+map.png and animations.json come from https://github.com/felixrieseberg/clippy
+(commit edb47a46c1f0d9b36436e8537013dc91e8ade89f), unchanged except that
+animations.json was written back without spaces.
+
+Clippy app code: Copyright 2025 Felix Rieseberg, MIT license (LICENSE-clippy.md).
+The Clippy character and artwork are copyrighted by Microsoft Corporation;
+that project uses them under fair use, and its MIT license does not cover them.
