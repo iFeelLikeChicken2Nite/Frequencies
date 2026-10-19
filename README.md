@@ -2,8 +2,8 @@
 ## A modern, stylish internet radio player for Linux and Windows. Simple, yet powerful. Decline the algorithm, and rediscover radio.
 ___________________________________
 
-# Install for [Windows 🪟](https://github.com/iFeelLikeChicken2Nite/frequencies-releases/releases/download/build-125/Frequencies-Setup.exe) 
-# Install Appimage for [Linux 🐧](https://github.com/iFeelLikeChicken2Nite/frequencies-releases/releases/download/build-125/Frequencies-x86_64.AppImage)
+# Install for [Windows 🪟](https://github.com/iFeelLikeChicken2Nite/frequencies-releases/releases/download/build-128/Frequencies-Setup.exe) 
+# Install Appimage for [Linux 🐧](https://github.com/iFeelLikeChicken2Nite/frequencies-releases/releases/download/build-128/Frequencies-x86_64.AppImage)
 
 <img width="1467" height="1002" alt="Screenshot_20261018_182004" src="https://github.com/user-attachments/assets/7e057a12-ba5b-4a46-96ea-c40dfbf6b15e" />
 
