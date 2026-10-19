@@ -24,6 +24,15 @@ SHIPPED = os.path.join(HERE, "src", "visualizer_disabled.json")
 
 
 def config_dir():
+    if os.environ.get("FREQUENCIES_DEV_CONFIG"):
+        # build-windows.ps1's copy (WP3): the Store's Python reads its own
+        # private AppData, not the folder the dev build writes.
+        return os.environ["FREQUENCIES_DEV_CONFIG"]
+    if sys.platform == "win32":
+        # Windows (WP3): the dev build's Settings, as appdirs.py has it.
+        base = os.environ.get("APPDATA") or os.path.join(
+            os.path.expanduser("~"), "AppData", "Roaming")
+        return os.path.join(base, "frequencies")
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(
         os.path.expanduser("~"), ".config")
     return os.path.join(base, "frequencies")

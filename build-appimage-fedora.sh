@@ -543,6 +543,10 @@ cp src/*.json AppDir/usr/share/frequencies/ 2>/dev/null || true
 # license and credits.
 mkdir -p AppDir/usr/share/frequencies/companion
 cp src/companion/* AppDir/usr/share/frequencies/companion/
+# Winamp's llama, played once the first time the Winamp view opens
+# (build 114, task 154).
+mkdir -p AppDir/usr/share/frequencies/sounds
+cp src/sounds/* AppDir/usr/share/frequencies/sounds/ 2>/dev/null || true
 # The between-station static: real radio recordings, loudness-matched
 # ahead of time so no clip jumps out when the mixer picks it.
 mkdir -p AppDir/usr/share/frequencies/static
@@ -559,6 +563,17 @@ cp icons/*.png AppDir/usr/share/frequencies/icons/
 cp frequencies.png AppDir/usr/share/frequencies/
 cp AppRun AppDir/AppRun
 chmod +x AppDir/AppRun
+
+# The bundled GnuTLS takes its TLS settings from Fedora's crypto-policies
+# file, which other distros don't have; without it every https stream
+# failed with "No or insufficient priorities were set" (Ubuntu, task 164).
+# A copy of this machine's file goes in for AppRun to use there.
+mkdir -p AppDir/usr/share/frequencies/tls
+if [ -f /etc/crypto-policies/back-ends/gnutls.config ]; then
+    cp /etc/crypto-policies/back-ends/gnutls.config AppDir/usr/share/frequencies/tls/gnutls.config
+else
+    printf '[priorities]\nSYSTEM=NORMAL\n' > AppDir/usr/share/frequencies/tls/gnutls.config
+fi
 cp frequencies.desktop AppDir/
 cp frequencies.desktop AppDir/usr/share/applications/
 cp frequencies.png AppDir/

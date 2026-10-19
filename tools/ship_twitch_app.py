@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Copy the developer's Twitch app Client ID into the build (task 92e).
 
-Run by build-appimage-fedora.sh before it copies src/ into the AppImage:
+Run by build-appimage-fedora.sh before it copies src/ into the AppImage
+(and by build-windows.ps1, from %APPDATA%\\frequencies, on Windows):
 
   your dev build saved   ~/.config/frequencies/twitch_app.json
   this writes            src/twitch_app.json
@@ -23,6 +24,15 @@ SHIPPED = os.path.join(HERE, "src", "twitch_app.json")
 
 
 def config_dir():
+    if os.environ.get("FREQUENCIES_DEV_CONFIG"):
+        # build-windows.ps1's copy (WP3): the Store's Python reads its own
+        # private AppData, not the folder the dev build writes.
+        return os.environ["FREQUENCIES_DEV_CONFIG"]
+    if sys.platform == "win32":
+        # Windows (WP2): the dev build's Settings, as appdirs.py has it.
+        base = os.environ.get("APPDATA") or os.path.join(
+            os.path.expanduser("~"), "AppData", "Roaming")
+        return os.path.join(base, "frequencies")
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(
         os.path.expanduser("~"), ".config")
     return os.path.join(base, "frequencies")

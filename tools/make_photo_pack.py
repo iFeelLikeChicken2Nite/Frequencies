@@ -55,6 +55,15 @@ PHOTO_FIELDS = ("photo", "photo_source", "photo_url")
 
 
 def config_dir():
+    if os.environ.get("FREQUENCIES_DEV_CONFIG"):
+        # build-windows.ps1's copy (WP3): the Store's Python reads its own
+        # private AppData, not the folder the dev build writes.
+        return os.environ["FREQUENCIES_DEV_CONFIG"]
+    if sys.platform == "win32":
+        # Windows (WP3): the dev build's Settings, as appdirs.py has it.
+        base = os.environ.get("APPDATA") or os.path.join(
+            os.path.expanduser("~"), "AppData", "Roaming")
+        return os.path.join(base, "frequencies")
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(
         os.path.expanduser("~"), ".config")
     return os.path.join(base, "frequencies")
@@ -148,10 +157,19 @@ def make_pack(dev):
              f" - NEW: upload {packbuild.BIO_NAME} (or press Publish my "
              f"bio fixes to GitHub in your dev build)"))
 
+    missing = packbuild.missing_photos(dev)
     data, manifest = packbuild.photo_pack(dev, talk)
     if data is None:
         print("    no photos for a photo pack yet (no artist or talk "
               "station photos in your dev build)")
+        return
+    if missing:
+        # WP3: corrections copied from another PC point at photos that
+        # stayed there. A pack made here would drop them: none is written.
+        print(f"!!  {len(missing)} artist photos aren't on this computer, "
+              f"so no photo pack is made here (uploading one would take "
+              f"them out of the published pack). Publish photos from the "
+              f"computer that has them.")
         return
     old = read(os.path.join(OUT, MANIFEST)) or {}
     same = old.get("sha256") == manifest["sha256"]

@@ -23,7 +23,7 @@ echo "==> Installing system dependencies (mpv/libmpv, python venv, tools)"
 apt-get update
 apt-get install -y \
     libmpv2 mpv python3-venv python3-pip \
-    file desktop-file-utils imagemagick python3-pil curl
+    file desktop-file-utils imagemagick python3-pil curl binutils
 
 PYVER="$(python3 -c 'import sys; print("python%d.%d" % sys.version_info[:2])')"
 echo "==> Building against ${PYVER}"
@@ -129,10 +129,15 @@ echo "    libmpv: ${LIBMPV_REAL}"
 cp -L "$LIBMPV_REAL" AppDir/usr/lib/libmpv.so.2
 
 cp src/*.py AppDir/usr/share/frequencies/
+cp src/*.json AppDir/usr/share/frequencies/ 2>/dev/null || true
 # Clippy's sprite sheet and animations (build 107, task 116), with their
 # license and credits.
 mkdir -p AppDir/usr/share/frequencies/companion
 cp src/companion/* AppDir/usr/share/frequencies/companion/
+# Winamp's llama, played once the first time the Winamp view opens
+# (build 114, task 154).
+mkdir -p AppDir/usr/share/frequencies/sounds
+cp src/sounds/* AppDir/usr/share/frequencies/sounds/ 2>/dev/null || true
 # The bundled skins, the Frequencies skin among them (build 109).
 mkdir -p AppDir/usr/share/frequencies/skins
 cp src/skins/*.wsz AppDir/usr/share/frequencies/skins/ 2>/dev/null || true

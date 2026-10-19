@@ -30,6 +30,15 @@ PHOTOS = "talk_photos"
 
 
 def config_dir():
+    if os.environ.get("FREQUENCIES_DEV_CONFIG"):
+        # build-windows.ps1's copy (WP3): the Store's Python reads its own
+        # private AppData, not the folder the dev build writes.
+        return os.environ["FREQUENCIES_DEV_CONFIG"]
+    if sys.platform == "win32":
+        # Windows (WP3): the dev build's Settings, as appdirs.py has it.
+        base = os.environ.get("APPDATA") or os.path.join(
+            os.path.expanduser("~"), "AppData", "Roaming")
+        return os.path.join(base, "frequencies")
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(
         os.path.expanduser("~"), ".config")
     return os.path.join(base, "frequencies")
@@ -69,6 +78,11 @@ def main(argv):
         if photo and not photo.startswith(("http://", "https://")):
             source = photo if os.path.isabs(photo) else os.path.join(
                 config_dir(), PHOTOS, os.path.basename(photo))
+            if not os.path.exists(source):
+                # Copied over from another PC (WP3: a Linux path on
+                # Windows), so it sits in this config folder's photos.
+                source = os.path.join(config_dir(), PHOTOS,
+                                      os.path.basename(photo))
             if not os.path.exists(source):
                 # Already shipped from an earlier build?
                 source = os.path.join(photo_dir, os.path.basename(photo))

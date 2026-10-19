@@ -24,6 +24,20 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 APPDIR = os.path.join(ROOT, "AppDir")
 EXCLUDELIST_PATH = os.path.join(ROOT, "excludelist")
 LIB_OUT = os.path.join(APPDIR, "usr", "lib")
+# Copies of excludelist libraries, used only on a system that lacks them.
+FALLBACK_OUT = os.path.join(LIB_OUT, "fallback")
+
+# Never shipped, not even as a fallback: glibc has to be the system's own.
+GLIBC = ("ld-linux", "libc.so", "libm.so", "libmvec.so", "libdl.so",
+         "libpthread.so", "librt.so", "libresolv.so", "libutil.so",
+         "libanl.so", "libnss_", "libthread_db.so", "libBrokenLocale.so",
+         "libcidn.so")
+
+# The libraries whose age matters, not just whether they are there: the
+# bundle may need a newer one than the system has (built on a newer
+# distro). AppRun compares the newest version tag the bundle asks for.
+VERSIONED = {"libc.so.6": "GLIBC_", "libstdc++.so.6": "GLIBCXX_",
+             "libgcc_s.so.1": "GCC_"}
 
 
 def pyqt_lib_dirs():
@@ -161,6 +175,7 @@ def main():
     bundled = 0
     skipped_excluded = 0
     skipped_pyqt = []
+    fallbacks = []
     for soname, real_path in sorted(all_deps.items()):
         if soname in provided_by_pyqt:
             # Leave it to PyQt5's own copy, found via RUNPATH.
@@ -170,6 +185,18 @@ def main():
             continue
         if is_excluded(soname, excludelist):
             skipped_excluded += 1
+            # Assumed present on every desktop, and usually it is, but
+            # not always: stock Ubuntu has no libOpenGL.so.0, and
+            # libmpv will not load without it (task 160). So a copy
+            # goes in fallback/<soname>/, and AppRun adds that folder
+            # only on a system that lacks the library (or, for
+            # libstdc++, has an older one).
+            if not soname.startswith(GLIBC):
+                keep = os.path.join(FALLBACK_OUT, soname)
+                os.makedirs(keep, exist_ok=True)
+                if not os.path.exists(os.path.join(keep, soname)):
+                    shutil.copy2(real_path, os.path.join(keep, soname))
+                    fallbacks.append(soname)
             continue
         dest = os.path.join(LIB_OUT, soname)
         if os.path.exists(dest):
@@ -192,6 +219,10 @@ def main():
             print(f"        ... and {len(from_host) - 10} more")
         print()
 
+    write_requirements(seeds)
+    if fallbacks:
+        print(f"Fallback copies (used only where the system lacks them): "
+              f"{', '.join(sorted(fallbacks))}")
     print(f"Bundled {bundled} shared libraries under their SONAME "
           f"(skipped {skipped_excluded} as host-provided, "
           f"{len(skipped_pyqt)} as PyQt5-provided).")
@@ -207,6 +238,49 @@ def main():
         if os.path.isfile(os.path.join(LIB_OUT, n))
     )
     print(f"{len(names)} files, {total / (1024 * 1024):.1f} MiB in {LIB_OUT}")
+
+
+def _version_key(tag):
+    return tuple(int(x) for x in re.findall(r"\d+", tag))
+
+
+def write_requirements(seeds):
+    """The newest glibc, libstdc++ and libgcc version each bundle needs.
+
+    Read from every ELF file's version references (objdump -p), so it is
+    what the binaries really ask for. Written to fallback/requires for
+    AppRun: an older system libstdc++ is swapped for the bundled one,
+    and an older glibc gets a plain message instead of a cryptic
+    "version `GLIBC_2.38' not found".
+    """
+    files = set(seeds) | set(find_elf_files(LIB_OUT))
+    newest = {}
+    for path in files:
+        try:
+            out = subprocess.run(["objdump", "-p", path], capture_output=True,
+                                 text=True, timeout=20).stdout
+        except Exception:
+            continue
+        lib = None
+        for line in out.splitlines():
+            m = re.match(r"\s+required from (\S+):", line)
+            if m:
+                lib = m.group(1)
+                continue
+            m = re.match(r"\s+0x[0-9a-f]+ 0x[0-9a-f]+ \d+ (\S+)", line)
+            if m and lib in VERSIONED and \
+                    m.group(1).startswith(VERSIONED[lib]):
+                tag = m.group(1)
+                if lib not in newest or \
+                        _version_key(tag) > _version_key(newest[lib]):
+                    newest[lib] = tag
+    os.makedirs(FALLBACK_OUT, exist_ok=True)
+    with open(os.path.join(FALLBACK_OUT, "requires"), "w") as f:
+        for lib, tag in sorted(newest.items()):
+            f.write(f"{lib} {tag}\n")
+    if "libc.so.6" in newest:
+        print(f"This AppImage needs glibc {newest['libc.so.6'][6:]} or newer "
+              f"on the system that runs it.")
 
 
 def verify_closure():

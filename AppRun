@@ -34,6 +34,100 @@ if [ -z "${PY_BIN}" ] || [ -z "${PY_STDLIB}" ]; then
     exit 1
 fi
 
+# System libraries the bundle relies on but some systems lack (task 160).
+#
+# The AppImage leaves the "every desktop has these" libraries to the
+# system, but not every desktop does: stock Ubuntu has no libOpenGL.so.0,
+# and libmpv won't load without it. The build keeps a copy of each in
+# usr/lib/fallback/<soname>/, and a folder is added here only when the
+# system has no such library, or (libstdc++, libgcc) an older one than
+# the bundle was built against. Where the system has it, its own copy is
+# used, exactly as before. This runs before the bundle's own folders go
+# on LD_LIBRARY_PATH, so grep and ldconfig here are the system's, using
+# the system's libraries; the folders added here end up after them.
+FALLBACK="${HERE}/usr/lib/fallback"
+if [ -d "${FALLBACK}" ]; then
+    # Where the system keeps its libraries, read once: ldconfig's cache
+    # when there is an ldconfig (Debian keeps it in /sbin, outside a
+    # user's PATH), the usual folders otherwise.
+    LDCONFIG="$(command -v ldconfig || true)"
+    for candidate in /sbin/ldconfig /usr/sbin/ldconfig; do
+        [ -n "${LDCONFIG}" ] && break
+        [ -x "${candidate}" ] && LDCONFIG="${candidate}"
+    done
+    SYSTEM_LIBS=""
+    if [ -n "${LDCONFIG}" ]; then
+        SYSTEM_LIBS="$("${LDCONFIG}" -p 2>/dev/null || true)"
+    fi
+    system_lib() {
+        # Prints the system's copy of $1 (a soname), if there is one.
+        local line path dir
+        while IFS= read -r line; do
+            case "${line}" in
+                *"$1 ("*x86-64*|*"$1 ("*AArch64*|*"$1 ("*aarch64*)
+                    path="${line##* }"
+                    if [ -e "${path}" ]; then echo "${path}"; return 0; fi ;;
+            esac
+        done <<< "${SYSTEM_LIBS}"
+        # Folders only without a cache: they also hold 32-bit copies
+        # (Fedora's /usr/lib), which the cache tells apart and a file
+        # name doesn't.
+        [ -z "${SYSTEM_LIBS}" ] || return 1
+        for dir in /usr/lib64 /lib64 /usr/lib/x86_64-linux-gnu \
+                   /lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu \
+                   /lib/aarch64-linux-gnu /usr/lib /lib; do
+            if [ -e "${dir}/$1" ]; then echo "${dir}/$1"; return 0; fi
+        done
+        return 1
+    }
+    # The newest version tag the bundle needs from each of these.
+    needed_tag() {
+        local lib tag
+        [ -f "${FALLBACK}/requires" ] || return 1
+        while read -r lib tag; do
+            if [ "${lib}" = "$1" ]; then echo "${tag}"; return 0; fi
+        done < "${FALLBACK}/requires"
+        return 1
+    }
+
+    # glibc can't be bundled: too old means this system can't run it,
+    # and that is better said plainly than as a linker error.
+    NEED_GLIBC="$(needed_tag libc.so.6 || true)"
+    HOST_LIBC="$(system_lib libc.so.6 || true)"
+    if [ -n "${NEED_GLIBC}" ] && [ -n "${HOST_LIBC}" ] && \
+            ! grep -qaF "${NEED_GLIBC}" "${HOST_LIBC}"; then
+        MSG="Frequencies needs a newer Linux than this one: it needs glibc ${NEED_GLIBC#GLIBC_} or newer, and this system has an older one. Updating to your distribution's current release will let it run."
+        echo "${MSG}" >&2
+        if command -v zenity >/dev/null 2>&1; then
+            zenity --error --title=Frequencies --text="${MSG}" 2>/dev/null || true
+        elif command -v kdialog >/dev/null 2>&1; then
+            kdialog --title Frequencies --error "${MSG}" 2>/dev/null || true
+        fi
+        exit 1
+    fi
+
+    for dir in "${FALLBACK}"/*/; do
+        [ -d "${dir}" ] || continue
+        soname="$(basename "${dir}")"
+        host="$(system_lib "${soname}" || true)"
+        use=0
+        if [ -z "${host}" ]; then
+            use=1
+        else
+            tag="$(needed_tag "${soname}" || true)"
+            if [ -n "${tag}" ] && ! grep -qaF "${tag}" "${host}"; then
+                use=1
+            fi
+        fi
+        if [ "${use}" = 1 ]; then
+            export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+${LD_LIBRARY_PATH}:}${dir%/}"
+            FREQ_FALLBACK_LIBS="${FREQ_FALLBACK_LIBS:+${FREQ_FALLBACK_LIBS} }${soname}"
+        fi
+    done
+    # The app writes these to its log, so a report shows them.
+    export FREQ_FALLBACK_LIBS="${FREQ_FALLBACK_LIBS:-}"
+fi
+
 # PyQt5's own Qt goes FIRST, ahead of our general bundle dir.
 #
 # Belt and braces alongside the skip in bundle_deps.py: PyQt5's Qt is
@@ -68,6 +162,33 @@ unset QT_QPA_PLATFORMTHEME
 unset QT_STYLE_OVERRIDE
 unset QML2_IMPORT_PATH
 unset QT_QPA_PLATFORM_PLUGIN_PATH
+
+# The system's trusted certificates, named outright (task 162).
+#
+# The bundled TLS libraries look where the build machine keeps them
+# (/etc/pki on Fedora); Ubuntu, Debian, Arch and openSUSE keep them
+# elsewhere, so every https request from Python's ssl failed there.
+if [ -z "${SSL_CERT_FILE:-}" ]; then
+    for candidate in /etc/ssl/certs/ca-certificates.crt \
+                     /etc/pki/tls/certs/ca-bundle.crt \
+                     /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem \
+                     /etc/ssl/ca-bundle.pem /etc/ssl/cert.pem; do
+        if [ -f "${candidate}" ]; then
+            export SSL_CERT_FILE="${candidate}"
+            break
+        fi
+    done
+fi
+
+# The bundled GnuTLS (mpv's https) reads its TLS settings from Fedora's
+# crypto-policies file. Elsewhere that file is missing and every https
+# stream failed with "No or insufficient priorities were set" (task 164),
+# so the copy made at build time is used instead.
+if [ -z "${GNUTLS_SYSTEM_PRIORITY_FILE:-}" ] \
+   && [ ! -f /etc/crypto-policies/back-ends/gnutls.config ] \
+   && [ -f "${HERE}/usr/share/frequencies/tls/gnutls.config" ]; then
+    export GNUTLS_SYSTEM_PRIORITY_FILE="${HERE}/usr/share/frequencies/tls/gnutls.config"
+fi
 
 export PYTHONHOME="${HERE}/usr"
 export PYTHONPATH="${PY_STDLIB}:${PY_STDLIB}/site-packages${PYTHONPATH:+:${PYTHONPATH}}"
