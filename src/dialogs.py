@@ -355,7 +355,7 @@ class SearchDialog(QDialog):
         # Fixed height on purpose - it is a suggestion, not the point of
         # the window, and it must never grow enough to push the search
         # results out of the way.
-        featured_box = QGroupBox("Featured stations (changes daily!)")
+        featured_box = QGroupBox("Featured stations (changes periodically!)")
         featured_layout = QVBoxLayout(featured_box)
         featured_layout.setContentsMargins(6, 6, 6, 6)
         self.featured_list = QListWidget()
@@ -703,7 +703,9 @@ class StationOptionsDialog(QDialog):
         # or cropping artwork on the Display tab redraws it.
         self._art_initial = art if art is not None and not art.isNull() \
             else None
-        self.art_preview = QLabel()
+        # Parented now: shown before it is laid out, a parentless label
+        # flashes up as a window of its own on Windows.
+        self.art_preview = QLabel(self)
         self.art_preview.setFixedSize(self.ART_SIDE, self.ART_SIDE)
         self.art_preview.setVisible(self._art_initial is not None)
         if self._art_initial is not None:
@@ -1532,24 +1534,25 @@ class StationPickerDialog(QDialog):
             # The card's own words, editable per station.
             #
             # These are what the popup shows — a heading, a line under
-            # the name, and a paragraph. Left blank, the station falls
-            # back to the stock text, so this only has to be filled in
+            # the name, and a blurb. Left blank, the card shows the
+            # station's tags and stream info, so this only has to be filled in
             # for the ones worth writing about.
             card = QFormLayout()
             self.card_title = QLineEdit()
-            self.card_title.setPlaceholderText("Heading, e.g. Requests only")
+            self.card_title.setPlaceholderText("Optional heading above the blurb")
             card.addRow("Card heading:", self.card_title)
 
             self.card_subtitle = QLineEdit()
             self.card_subtitle.setPlaceholderText(
-                "One line, e.g. Talk · listener-driven")
+                "Optional line under the name, used when it has no tags")
             card.addRow("Card subtitle:", self.card_subtitle)
 
             self.card_body = QPlainTextEdit()
             self.card_body.setPlaceholderText(
-                "What you want people to read about this station.")
+                "What you want people to read about this station. Left "
+                "blank, the card shows its tags and stream info.")
             self.card_body.setFixedHeight(90)
-            card.addRow("Card text:", self.card_body)
+            card.addRow("Blurb:", self.card_body)
             layout.addLayout(card)
 
             for widget in (self.card_title, self.card_subtitle):

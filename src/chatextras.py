@@ -265,8 +265,8 @@ def _session():
 
 
 def _cache_dir():
-    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(
-        os.path.expanduser("~"), ".cache")
+    import appdirs
+    base = appdirs.cache_base()
     path = os.path.join(base, "frequencies", "emotes")
     os.makedirs(path, exist_ok=True)
     return path

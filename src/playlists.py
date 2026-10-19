@@ -45,6 +45,13 @@ FORMATS = {
     "rhythmbox": "Rhythmbox (rhythmdb.xml)",
     "radiodroid": "JSON (RadioDroid, radio-browser exports)",
     "streamdeck": "Frequencies backup",
+    # Read only, from the apps' own files (radioapps.py, build 113).
+    "shortwave": "Shortwave (library)",
+    "gradio": "Gradio (library)",
+    "musicpod": "MusicPod (starred stations)",
+    "strawberry": "Strawberry (streams in its playlists)",
+    "clementine": "Clementine (Your radio streams)",
+    "gnomeradio": "GNOME Radio (your stations)",
 }
 
 EXPORT_FORMATS = ("goodvibes", "m3u", "pls", "xspf", "opml", "radiodroid",
@@ -58,6 +65,10 @@ LAST_SKIPPED = 0
 _PAGE_HOSTS = ("opml.radiotime.com", "tunein.com", "radiotime.com")
 
 _URL_RE = re.compile(r"^[a-z][a-z0-9+.\-]*://", re.IGNORECASE)
+
+
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                      re.IGNORECASE)
 
 
 def _is_url(text):
@@ -188,12 +199,18 @@ def _read_json(data):
                or row.get("streamUrl") or row.get("stream_url") or "")
         name = (row.get("custom_name") or row.get("name")
                 or row.get("title") or url)
-        favicon = row.get("favicon") or row.get("imageUrl") or ""
+        url = url or row.get("urlResolved") or row.get("url-resolved") or ""
+        favicon = (row.get("favicon") or row.get("imageUrl")
+                   or row.get("favicon-url") or "")
         tags = (row.get("tags") or row.get("genre") or row.get("genres")
                 or row.get("category") or "")
+        # radio-browser's id (RadioDroid, Tuner); Tuner 1 called it "id".
+        rb = row.get("stationuuid") or row.get("id") or ""
+        rb = rb if isinstance(rb, str) and _UUID_RE.match(rb) else ""
         if _is_url(url):
             stations.append({"name": name, "url": url, "favicon": favicon,
-                             "tags": tags})
+                             "tags": tags, "rb_uuid": rb,
+                             "homepage": row.get("homepage") or ""})
     return stations
 
 
@@ -333,6 +350,8 @@ def sniff_format(text):
         return "pls"
     if head.startswith("{") or head.startswith("["):
         return "radiodroid"
+    if "<gnome_radio" in head:
+        return "gnomeradio"
     # Goodvibes before XSPF: both are XML, but Goodvibes uses <Stations>.
     if "<stations" in head:
         return "goodvibes"
@@ -348,7 +367,24 @@ def sniff_format(text):
 
 
 def read_file(path):
-    """Any supported playlist file -> (format_name, [station dicts])."""
+    """Any supported playlist file -> (format_name, [station dicts]).
+
+    A station from an app that only kept its radio-browser id (Gradio, a
+    Shortwave station never opened) comes back with no "url" and an
+    "rb_uuid"/"rb_id": radioapps.fill_in() looks those up, off the GUI
+    thread.
+    """
+    import radioapps
+    global LAST_SKIPPED
+    LAST_SKIPPED = 0
+    if radioapps.is_sqlite(path):
+        try:
+            fmt, stations = radioapps.read_sqlite(path)
+        except radioapps.AppFileError as exc:
+            raise PlaylistError(str(exc)) from exc
+        if not stations:
+            raise PlaylistError(f"{FORMATS[fmt]} has no stations in it yet.")
+        return fmt, stations
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             text = f.read()
@@ -358,10 +394,19 @@ def read_file(path):
     if not text.strip():
         raise PlaylistError("That file is empty.")
 
-    global LAST_SKIPPED
-    LAST_SKIPPED = 0
     fmt = sniff_format(text)
-    if fmt == "radiodroid":
+    if radioapps.is_clementine_conf(text):
+        fmt = "clementine"
+        stations = radioapps.read_clementine(path)
+        if not stations:
+            raise PlaylistError("Clementine's “Your radio streams” is empty.")
+        return fmt, stations
+    if fmt == "gnomeradio":
+        try:
+            stations = radioapps.read_gnome_radio(text)
+        except radioapps.AppFileError as exc:
+            raise PlaylistError(str(exc)) from exc
+    elif fmt == "radiodroid":
         try:
             data = json.loads(text)
         except json.JSONDecodeError as exc:
@@ -500,6 +545,8 @@ def to_station(entry):
         url=entry["url"],
         favicon=entry.get("favicon", ""),
         insecure=bool(entry.get("insecure")),
+        rb_uuid=entry.get("rb_uuid") or "",
+        homepage=entry.get("homepage") or "",
         # Tags come across.
         #
         # This built a station from scratch and never looked at them, so
@@ -657,16 +704,12 @@ def default_extension(fmt):
 # app you use isn't here, its config file can be added once we know what
 # it looks like - the generic M3U/PLS/XSPF/JSON readers already cover a
 # lot of them.
+# Goodvibes, Rhythmbox, Clementine, Shortwave, Gradio, MusicPod, Tuner,
+# Strawberry and GNOME Radio: their places are in radioapps.APPS (build
+# 113), which "Send to" uses too.
 KNOWN_APPS = [
-    ("Goodvibes", "goodvibes", "$XDG_CONFIG_HOME/goodvibes/stations.xml"),
-    ("Goodvibes", "goodvibes", "~/.config/goodvibes/stations.xml"),
     ("Audacious", "m3u", "~/.config/audacious/playlists/*.audpl"),
     ("VLC", "xspf", "~/.local/share/vlc/ml.xspf"),
-    # The radio stations are in rhythmdb.xml; playlists.xml (the old entry)
-    # only holds song playlists.
-    ("Rhythmbox", "rhythmbox", "~/.local/share/rhythmbox/rhythmdb.xml"),
-    ("Rhythmbox", "rhythmbox",
-     "~/.var/app/org.gnome.Rhythmbox3/data/rhythmbox/rhythmdb.xml"),
     ("RadioDroid backup", "radiodroid", "~/Downloads/*radiodroid*.json"),
     ("Frequencies", "streamdeck", "~/*frequencies-backup*.json"),
     ("StreamDeck Radio", "streamdeck", "~/*streamdeck-radio-backup*.json"),
@@ -686,8 +729,21 @@ def discover_app_configs():
         os.path.expanduser("~"), ".config"
     )
 
+    import radioapps
     found = []
     seen = set()
+    for key in radioapps.APPS:
+        for label, path in radioapps.found_files(key):
+            real = os.path.realpath(path)
+            if real in seen:
+                continue
+            seen.add(real)
+            try:
+                _detected, stations = read_file(path)
+            except Exception:               # noqa: BLE001
+                continue
+            if stations:
+                found.append((label, path, len(stations)))
     for app_name, _fmt, pattern in KNOWN_APPS:
         expanded = pattern.replace("$XDG_CONFIG_HOME", config_home)
         expanded = os.path.expanduser(expanded)

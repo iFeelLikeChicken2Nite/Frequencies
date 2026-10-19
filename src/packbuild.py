@@ -61,6 +61,20 @@ def bio_fixes(dev):
     return data.encode("utf-8") + b"\n", len(fixes), digest
 
 
+def missing_photos(dev):
+    """Artists whose photo is a file this computer doesn't have (WP3: a
+    Linux path in corrections copied to Windows). A pack made here would
+    drop their photos, so it must not replace the published one."""
+    missing = []
+    for key, entry in sorted((dev or {}).items()):
+        photo = entry.get("photo") if isinstance(entry, dict) else None
+        if isinstance(photo, str) and photo.strip() \
+                and not photo.strip().startswith(("http://", "https://")) \
+                and not os.path.isfile(photo.strip()):
+            missing.append(key)
+    return missing
+
+
 def photo_pack(dev, talk_photos, warn=print):
     """(encoded pack, manifest) or (None, None) when there are no photos.
 

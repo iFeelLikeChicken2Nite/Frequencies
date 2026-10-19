@@ -35,9 +35,8 @@ _lock = threading.RLock()
 
 
 def log_dir():
-    base = os.environ.get("XDG_STATE_HOME") or os.path.join(
-        os.path.expanduser("~"), ".local", "state"
-    )
+    import appdirs
+    base = appdirs.state_base()
     path = os.path.join(base, APP_DIR_NAME)
     os.makedirs(path, exist_ok=True)
     return path

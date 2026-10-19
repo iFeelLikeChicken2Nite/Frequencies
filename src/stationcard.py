@@ -5,7 +5,8 @@ one can be open at once. At the foot of it sit three icon buttons — Play,
 Add and Share — which do the same things as the right-click menu on the
 featured strip.
 
-The blurbs are dog jokes for now, in the same spirit as the help page.
+The words are the curator's own blurb from featured.json when there is
+one; otherwise the card shows only what is known about the station.
 """
 
 from PyQt5.QtCore import QPoint, QPointF, QSize, Qt, QTimer
@@ -15,59 +16,40 @@ from PyQt5.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel,
 
 from theme import T
 
-# Keyed loosely: whatever a station is called, one of these fits.
-# Title, subtitle, body — the three parts the card shows. Dog jokes for
-# now; the shape is what matters, so filling these in later is editing a
-# list rather than changing the card.
-BLURBS = (
-    ("Requests only",
-     "Talk · listener-driven",
-     "A dog walks into a radio station and asks to make a request.\n\n"
-     "The host says they don't take requests from dogs. The dog says "
-     "fine, he'll sit outside the window and stare. They played it."),
+def _written(station, *keys):
+    """The first non-empty text the curator wrote under any of `keys`.
 
-    ("No bath talk",
-     "Music · uninterrupted",
-     "Why do dogs love this station?\n\n"
-     "No talk segments, and nobody ever says the word \"bath\"."),
-
-    ("Third song rule",
-     "Eclectic · loud",
-     "My dog has strong opinions about this one.\n\n"
-     "He howls along to every third song, which is a better hit rate "
-     "than most critics."),
-
-    ("AM, obviously",
-     "Oldies · gentle",
-     "What's a dog's favorite kind of radio?\n\n"
-     "AM. He likes anything that comes with a walk beforehand."),
-
-    ("Sixteen hours",
-     "Ambient · accidental",
-     "This station once played sixteen hours of ambient by mistake.\n\n"
-     "The dog slept through all of it and has requested it since."),
-
-    ("Felt in the ribs",
-     "Bass · physical",
-     "Why did the dog sit so close to the speaker?\n\n"
-     "Bass. He says he feels it in his ribs, which is also how he "
-     "describes dinner."),
-
-    ("The overnight show",
-     "Freeform · nocturnal",
-     "A beagle applied to host the overnight show.\n\n"
-     "Excellent nose for a good track, no sense of an outro. Every song "
-     "ends when he decides it does."),
-)
-
-
-def blurb_for(name):
-    """One of the jokes, chosen by name so a station keeps the same one.
-
-    Random would give a different joke every time the same card opened,
-    which reads as a bug rather than as variety.
+    Looked for on the row itself, on the featured entry it carries, and
+    on that entry's own copy of the JSON (`settings`), since the row the
+    strip hands over is a slim one built for drawing tiles.
     """
-    return BLURBS[sum(ord(c) for c in (name or "?")) % len(BLURBS)]
+    feat = station.get("_featured")
+    feat = feat if isinstance(feat, dict) else {}
+    raw = feat.get("settings")
+    raw = raw if isinstance(raw, dict) else {}
+    for source in (station, feat, raw):
+        for key in keys:
+            value = source.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return ""
+
+
+def _stream_info(station):
+    """What is known about the stream: format, bitrate and where it's from."""
+    from urllib.parse import urlparse
+    feat = station.get("_featured")
+    feat = feat if isinstance(feat, dict) else {}
+    codec = (feat.get("codec") or station.get("codec") or "").strip()
+    try:
+        bitrate = int(feat.get("bitrate") or station.get("bitrate") or 0)
+    except (TypeError, ValueError):
+        bitrate = 0
+    host = urlparse(station.get("url") or feat.get("url") or "").hostname
+    parts = [codec.upper() if codec else "",
+             f"{bitrate} kbps" if bitrate > 0 else "",
+             f"Streams from {host}" if host else ""]
+    return " · ".join(p for p in parts if p)
 
 
 # Two glyphs the shared icon painter does not have.
@@ -157,11 +139,12 @@ class StationCard(QWidget):
         # here and took the whole card with it.
         station = dict(station or {})
         name = storage.station_display_name(station) or "Unknown station"
-        blurb_title, blurb_sub, blurb_body = blurb_for(name)
-        # Whatever was written for this station wins over the stock text.
-        blurb_title = (station.get("card_title") or blurb_title).strip()
-        blurb_sub = (station.get("card_subtitle") or blurb_sub).strip()
-        blurb_body = (station.get("card_body") or blurb_body).strip()
+        # Only what was written for this station, never stock text.
+        blurb_title = _written(station, "card_title")
+        blurb_sub = _written(station, "card_subtitle")
+        blurb_body = _written(station, "blurb", "card_body")
+        feat = station.get("_featured")
+        feat = feat if isinstance(feat, dict) else {}
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(20, 18, 20, 16)
@@ -206,7 +189,11 @@ class StationCard(QWidget):
         # A station from the library has plain strings; a row built for
         # the list has (name, colour) pairs, and printing one of those
         # gave a Python tuple on screen — quotes, hash and all.
-        tags = station.get("tags") or []
+        # The entry's full list; the tile's row only keeps two.
+        raw = feat.get("settings") if isinstance(feat.get("settings"),
+                                                 dict) else {}
+        tags = raw.get("tags") or feat.get("tags") or station.get("tags") \
+            or []
         if isinstance(tags, str):
             tags = [t.strip() for t in tags.split(",") if t.strip()]
         flat = []
@@ -216,25 +203,31 @@ class StationCard(QWidget):
             if tag:
                 flat.append(str(tag))
         tags = flat
-        known = " · ".join(str(x) for x in (station.get("country"),
-                                            station.get("language"),
+        known = " · ".join(str(x) for x in (station.get("country")
+                                            or feat.get("country"),
+                                            station.get("language")
+                                            or feat.get("language"),
                                             ", ".join(tags)) if x)
-        subtitle = QLabel(known or blurb_sub)
-        subtitle.setProperty("role", "secondary")
-        subtitle.setWordWrap(True)
-        text.addWidget(subtitle)
+        if known or blurb_sub:
+            subtitle = QLabel(known or blurb_sub)
+            subtitle.setProperty("role", "secondary")
+            subtitle.setWordWrap(True)
+            text.addWidget(subtitle)
 
         text.addSpacing(10)
 
-        heading = QLabel(blurb_title)
-        heading.setProperty("role", "title")
-        heading.setWordWrap(True)
-        text.addWidget(heading)
+        if blurb_title:
+            heading = QLabel(blurb_title)
+            heading.setProperty("role", "title")
+            heading.setWordWrap(True)
+            text.addWidget(heading)
 
-        body = QLabel(blurb_body)
-        body.setProperty("role", "body")
+        # No blurb: what the stream is, instead of filler (task 158).
+        body = QLabel(blurb_body or _stream_info(station))
+        body.setProperty("role", "body" if blurb_body else "secondary")
         body.setWordWrap(True)
-        text.addWidget(body)
+        if body.text():
+            text.addWidget(body)
 
         # Spare height, if the window is made taller, goes below the
         # words, so they stay together at the top and the buttons at the

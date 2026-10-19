@@ -15,11 +15,19 @@ equalizer, rather than to the raw stream before any of that.
 Capture runs in a subprocess reading raw PCM on stdout. pw-record ships
 with PipeWire, parec with PulseAudio, and Fedora's pipewire-pulse
 provides parec too, so one of them is almost always there.
+
+On Windows (WP2) there is no monitor to record: WASAPI loopback of the
+default output does the same job, through PyAudioWPatch (bundled with
+the app). `_WasapiCapture` stands in for the subprocess, so the reader
+thread and the rest of this file stay the same.
 """
 
+import array
+import queue
 import shutil
 import struct
 import subprocess
+import sys
 import threading
 
 RATE = 44100
@@ -59,8 +67,117 @@ def _pulse_command(source=None):
     return command
 
 
+def _wasapi():
+    """The PyAudioWPatch module, or None (Windows only)."""
+    try:
+        import pyaudiowpatch
+        return pyaudiowpatch
+    except Exception:                      # noqa: BLE001
+        return None
+
+
+def _loopback_device(pa, pyaudio, source=None):
+    """The loopback device to record: the named one, else the one of
+    the default output, else the first there is."""
+    loopbacks = list(pa.get_loopback_device_info_generator())
+    if source:
+        for device in loopbacks:
+            if device["name"] == source:
+                return device
+    try:
+        wasapi = pa.get_host_api_info_by_type(pyaudio.paWASAPI)
+        speakers = pa.get_device_info_by_index(wasapi["defaultOutputDevice"])
+        for device in loopbacks:
+            if speakers["name"] in device["name"]:
+                return device
+    except Exception:                      # noqa: BLE001
+        pass
+    return loopbacks[0] if loopbacks else None
+
+
+class _WasapiCapture:
+    """WASAPI loopback, shaped like the Popen the Linux tools give:
+    `stdout.read(n)` hands back s16le stereo, `poll()` is None while it
+    runs, `terminate()` stops it.
+
+    PortAudio fills a queue from its own thread (callback mode), so
+    stopping never closes a stream another thread is blocked reading.
+    WASAPI sends nothing while nothing plays; read() hands back silence
+    then, so the picture goes still as it does on Linux."""
+
+    def __init__(self, source=None):
+        pyaudio = _wasapi()
+        if pyaudio is None:
+            raise OSError("PyAudioWPatch is not bundled")
+        self._pa = pyaudio.PyAudio()
+        self._queue = queue.Queue(maxsize=32)
+        self._done = False
+        self._continue = pyaudio.paContinue
+        try:
+            device = _loopback_device(self._pa, pyaudio, source)
+            if device is None:
+                raise OSError("no WASAPI loopback device")
+            self.channels = max(1, int(device["maxInputChannels"]))
+            self._stream = self._pa.open(
+                format=pyaudio.paInt16, channels=self.channels,
+                rate=int(device["defaultSampleRate"]), input=True,
+                input_device_index=device["index"],
+                frames_per_buffer=CHUNK_FRAMES,
+                stream_callback=self._arrived)
+        except Exception:
+            self._pa.terminate()
+            raise
+        self.device = device["name"]
+        self.stdout = self
+
+    def _arrived(self, data, _frames, _time, _status):
+        try:
+            self._queue.put_nowait(data)
+        except queue.Full:
+            pass
+        return None, self._continue
+
+    def read(self, nbytes):
+        if self._done:
+            return b""
+        try:
+            raw = self._queue.get(timeout=0.1)
+        except queue.Empty:
+            return bytes(nbytes)
+        if self.channels == CHANNELS:
+            return raw
+        # Mono doubled, surround cut to its front left and right.
+        values = array.array("h", raw)
+        frames = len(values) // self.channels
+        out = array.array("h", bytes(frames * CHANNELS * BYTES_PER_SAMPLE))
+        out[0::2] = values[0::self.channels][:frames]
+        out[1::2] = values[min(1, self.channels - 1)::self.channels][:frames]
+        return out.tobytes()
+
+    def poll(self):
+        return 0 if self._done else None
+
+    def terminate(self):
+        if self._done:
+            return
+        self._done = True
+        for close in (self._stream.stop_stream, self._stream.close,
+                      self._pa.terminate):
+            try:
+                close()
+            except Exception:              # noqa: BLE001
+                pass
+
+    kill = terminate
+
+    def wait(self, timeout=None):
+        return 0
+
+
 def capture_command(source=None):
     """The command to run, or None if neither tool is installed."""
+    if sys.platform == "win32":
+        return None                     # Windows records in-process
     if shutil.which("parec"):
         # Preferred when a source is named: parec takes device names,
         # which are stable and readable, where pw-record wants numeric
@@ -78,6 +195,21 @@ def list_sources():
     what a visualizer wants. A real microphone is offered too, since
     somebody may actually want that, but it should not be the default.
     """
+    if sys.platform == "win32":
+        pyaudio = _wasapi()
+        if pyaudio is None:
+            return []
+        try:
+            pa = pyaudio.PyAudio()
+            try:
+                names = [d["name"] for d in
+                         pa.get_loopback_device_info_generator()]
+            finally:
+                pa.terminate()
+        except Exception:                  # noqa: BLE001
+            return []
+        return [(name.replace(" [Loopback]", " (output)"), name)
+                for name in names]
     if not shutil.which("pactl"):
         return []
     try:
@@ -104,6 +236,12 @@ def list_sources():
 
 def availability():
     """(usable, message) for the visualizer to show."""
+    if sys.platform == "win32":
+        if _wasapi() is None:
+            return False, ("The visualizer can't hear the music: the "
+                           "Windows audio capture part is missing from "
+                           "this build.")
+        return True, "Listening to the audio output."
     if capture_command() is None:
         return False, (
             "No audio capture tool found, so the visualizer can't hear "
@@ -157,6 +295,16 @@ class AudioTap:
         self._stop = threading.Event()
 
     def start(self):
+        if sys.platform == "win32":
+            try:
+                self._process = _WasapiCapture(self.source)
+            except Exception as error:     # noqa: BLE001
+                import crashlog
+                crashlog.write(f"[vis] Windows audio capture didn't "
+                               f"start: {error}")
+                self._process = None
+                return False
+            return self._start_reader()
         command = capture_command(self.source)
         if command is None:
             return False
@@ -170,7 +318,9 @@ class AudioTap:
         except Exception:                  # noqa: BLE001
             self._process = None
             return False
+        return self._start_reader()
 
+    def _start_reader(self):
         self._stop.clear()
         with _running_lock:
             _running.add(self)

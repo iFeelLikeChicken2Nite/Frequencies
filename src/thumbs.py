@@ -45,9 +45,8 @@ def cache_dir():
     global _cache_dir
     if _cache_dir is not None:
         return _cache_dir
-    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(
-        os.path.expanduser("~"), ".cache"
-    )
+    import appdirs
+    base = appdirs.cache_base()
     path = os.path.join(base, "frequencies", "thumbs")
     os.makedirs(path, exist_ok=True)
     _cache_dir = path

@@ -76,7 +76,7 @@ def main():
     )
     engine.set_normalize(settings.get("normalize", True))
     engine.set_noise_enabled(settings.get("noise_between_stations", True))
-    engine.set_noise_volume(settings.get("noise_volume", 70))
+    engine.set_noise_volume(settings.get("noise_volume", 100))
     engine.set_volume(int(settings.get("volume", 80)))
 
     engine.set_advanced_equalizer(False)

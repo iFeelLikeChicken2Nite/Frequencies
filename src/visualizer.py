@@ -13,6 +13,7 @@ come from; see projectm.py.
 
 import logging
 import random
+import sys
 import threading
 
 from PyQt5.QtCore import QEvent, QPoint, QRect, Qt, QTimer, pyqtSignal
@@ -604,7 +605,7 @@ class VisualizerWindow(QWidget):
         if not self._menu_logged:
             self._menu_logged = True
             _vlog(f"window #{self.number}: menu opened "
-                  f"({'Wayland, no mouse grab' if wayland else 'X11, mouse grab'})"
+                  f"({'Wayland, no mouse grab' if wayland else ('Windows' if sys.platform == 'win32' else 'X11') + ', mouse grab'})"
                   f", audio sources listed: "
                   f"{'not yet' if _sources is None else len(_sources)}")
 

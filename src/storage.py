@@ -44,9 +44,8 @@ def is_backup_format(value):
 
 
 def _config_dir():
-    base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(
-        os.path.expanduser("~"), ".config"
-    )
+    import appdirs
+    base = appdirs.config_base()
     path = os.path.join(base, APP_DIR_NAME)
     if not os.path.isdir(path):
         legacy = os.path.join(base, LEGACY_APP_DIR_NAME)
@@ -356,7 +355,8 @@ SETTINGS_DEFAULTS = {
     # sat at 35, so it was ~7 dB down on top of the recordings being
     # quiet in the first place. 70 puts it in the same ballpark as the
     # programme material without burying it.
-    "noise_volume": 70,
+    # 100 since build 120 (task 165, the user's choice).
+    "noise_volume": 100,
     "last_station_id": None,
     "auto_skip_broken": True,
     "auto_skip_after_tries": 3,
@@ -368,6 +368,8 @@ SETTINGS_DEFAULTS = {
     "identify_default_applied": False,
     # One-time nudge for anyone still on the old, too-quiet default.
     "noise_volume_raised": False,
+    # One-time move onto build 120's defaults (task 165/167).
+    "defaults_120_applied": False,
 
     # Re-check stations that failed, in the background, so a station
     # that was down an hour ago isn't skipped forever - and isn't
@@ -476,7 +478,7 @@ SETTINGS_DEFAULTS = {
     # ceiling the canvas allows.
     "visualizer_gain": 16.0,
     # Follow the station when Next or Previous moves it.
-    "jump_on_change": False,
+    "jump_on_change": True,
     # Presets switched off in the browser, by full path.
     "visualizer_disabled": [],
     # True once the developer's shipped disabled list was offered to this
@@ -500,7 +502,8 @@ SETTINGS_DEFAULTS = {
 
     # Halves of the side panel the user has folded away. Both show by
     # default; remembered so a fold survives a restart.
-    "skin_scale": 2,
+    # Normal size by default since build 120 (task 167).
+    "skin_scale": 1,
     # One-time migration marker: the EQ used to be a single global
     # setting. When it became per-station, whatever was set globally
     # was copied onto every station so nobody's sound changed.
@@ -508,8 +511,9 @@ SETTINGS_DEFAULTS = {
     # Ordinary songs kept in history. Favourites are never counted
     # against this — see trim_history.
     "shazam_history_limit": 300,
-    # Show times as 1:30 PM rather than 13:30, everywhere.
-    "clock_12h": False,
+    # Show times as 1:30 PM rather than 13:30, everywhere. On by
+    # default since build 120 (task 165).
+    "clock_12h": True,
     "thumbnail_cache_mb": 1024,
 }
 
@@ -520,17 +524,24 @@ HISTORY_HARD_CAP = 5000
 
 
 def _default_stations():
-    return [
-        dict(STATION_DEFAULTS, id=str(uuid.uuid4()),
-             name="SomaFM - Groove Salad",
-             url="https://ice1.somafm.com/groovesalad-128-mp3"),
-        dict(STATION_DEFAULTS, id=str(uuid.uuid4()),
-             name="SomaFM - Drone Zone",
-             url="https://ice1.somafm.com/dronezone-128-mp3"),
-        dict(STATION_DEFAULTS, id=str(uuid.uuid4()),
-             name="BBC Radio 1",
-             url="http://stream.live.vc.bbcmedia.co.uk/bbc_radio_one"),
-    ]
+    """What a fresh profile starts with (task 170, build 121): the
+    developer's seven picks, read from their shared QR codes into the
+    shipped default_stations.json (settings and thumbnail artwork, no
+    play counts or tags)."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "default_stations.json")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            entries = json.load(f)
+    except (OSError, ValueError):
+        return []
+    stations = []
+    for entry in entries if isinstance(entries, list) else []:
+        if isinstance(entry, dict) and entry.get("url"):
+            station = station_from_featured(entry)
+            station["added_at"] = time.time()
+            stations.append(_normalize_station(station))
+    return stations
 
 
 def _clamp(value, low, high, fallback):
@@ -1711,8 +1722,8 @@ _FEATURED_SKIP = ("id", "local_path", "sort_index", "connect_worst",
 # still part of what somebody tuned. Without them a shared station
 # arrives having lost the very corrections the sharer made.
 # The card's own words travel with a featured station: they are written
-# about that station, and a station without them falls back to the stock
-# text as before.
+# about that station, and a station without them shows its tags and
+# stream info instead.
 _FEATURED_CORE = ("name", "url", "artist_lookup", "playlist_url", "kind",
                   "card_title", "card_subtitle", "card_body",
                   "twitch_channel", "shows")
@@ -1969,6 +1980,21 @@ def is_youtube_station(station):
     return (station or {}).get("kind") == "youtube"
 
 
+def is_ibroadcast_station(station):
+    station = station or {}
+    return bool(station.get("ibroadcast_urls")) or station.get("kind") == "ibroadcast"
+
+
+def skipped_when_down(station):
+    """Whether a station marked down is passed over without being asked.
+
+    Never an iBroadcast one (build 114, task 156): it goes down when the
+    sign-in lapses or the service blips, and it is the user's own
+    library. Next/Previous pressed by hand still move on from it.
+    """
+    return not is_ibroadcast_station(station)
+
+
 def is_twitch_station(station):
     """A Twitch channel (build 79: one test for the places that ask)."""
     station = station or {}
@@ -2040,6 +2066,32 @@ def pick_local_track(folder, exclude=None, rng=None):
     else:
         candidates = tracks
     return chooser.choice(candidates)
+
+
+# Build 120's new defaults (tasks 165, 167): key -> (old default, new).
+NEW_DEFAULTS_120 = {
+    "noise_volume": (70, 100),
+    "clock_12h": (False, True),
+    "jump_on_change": (False, True),
+    "skin_scale": (2, 1),
+}
+
+
+def apply_new_defaults_120(settings):
+    """Move an existing install onto build 120's defaults, once.
+
+    A saved settings file holds every key, so "never changed" can only
+    be told by the value: one still on the old default is moved, any
+    other value is the user's own and stays. Returns True if anything
+    changed.
+    """
+    if settings.get("defaults_120_applied"):
+        return False
+    settings["defaults_120_applied"] = True
+    for key, (old, new) in NEW_DEFAULTS_120.items():
+        if key in settings and settings[key] == old:
+            settings[key] = new
+    return True
 
 
 def lower_old_stall_timeout(settings):

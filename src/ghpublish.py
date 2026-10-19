@@ -95,6 +95,12 @@ def gather(kind):
     if kind == "bios":
         data, count, _digest = packbuild.bio_fixes(dev)
         return [(packbuild.BIO_NAME, data)], f"{count} artists' fixes"
+    missing = packbuild.missing_photos(dev)
+    if missing:
+        raise RuntimeError(
+            f"{len(missing)} artist photos aren't on this computer (such as "
+            f"{missing[0]}'s), so publishing from here would take them out "
+            f"of the photo pack. Publish it from the computer that has them")
     talk = {}
     for key, entry in storage.talk_entries().items():
         photo = (entry.get("photo") or "").strip()

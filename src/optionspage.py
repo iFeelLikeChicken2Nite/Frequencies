@@ -249,6 +249,9 @@ class OptionsPage(QWidget):
         # The outputs again: mpv reports its list a moment after
         # start-up, and devices come and go (task 36).
         self._fill_outputs()
+        # Signing in to iBroadcast happens while adding a station, after
+        # this page was built (task 166).
+        self._refresh_ib()
         super().showEvent(e)
 
     # -- helpers -----------------------------------------------------------
@@ -320,7 +323,7 @@ class OptionsPage(QWidget):
         self.noise_vol = QSlider(Qt.Horizontal)
         self.noise_vol.setRange(0, 100)
         self.noise_vol.setFixedWidth(180)
-        self.noise_vol.setValue(int(self.lib.settings.get("noise_volume", 70)))
+        self.noise_vol.setValue(int(self.lib.settings.get("noise_volume", 100)))
         self.noise_label = QLabel(f"{self.noise_vol.value()}%")
         self.noise_label.setProperty("role", "secondary")
         self.noise_vol.valueChanged.connect(self._noise_volume)
@@ -425,7 +428,7 @@ class OptionsPage(QWidget):
             "jump_on_change",
             "Automatically scroll list position to currently playing "
             "frequency",
-            default=False))
+            default=True))
 
         lay.addWidget(self._check(
             "health_recheck", "Re-check frequencies that are down",
@@ -912,7 +915,8 @@ class OptionsPage(QWidget):
     def import_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Import stations", os.path.expanduser("~"),
-            "Station lists (*.m3u *.m3u8 *.pls *.xspf *.opml *.json *.xml *.audpl *.zip);;"
+            "Station lists (*.m3u *.m3u8 *.pls *.xspf *.opml *.json *.xml *.audpl *.zip "
+            "*.db *.sqlite *.conf);;"
             "All files (*)")
         if not path:
             return
@@ -928,11 +932,28 @@ class OptionsPage(QWidget):
 
     def _import_path(self, path):
         import playlists
+        import radioapps
         try:
             _fmt, entries = playlists.read_file(path)
         except Exception as exc:                # noqa: BLE001
             QMessageBox.warning(self, "Import", f"Couldn't read it: {exc}")
             return
+        if not radioapps.needs_lookup(entries):
+            self._add_imported(entries)
+            return
+        # Some stations are only a radio-browser id (Gradio, Shortwave):
+        # look them up off the GUI thread, then add.
+        import workers
+        job = workers.Lookup(lambda: radioapps.fill_in(entries))
+        job.done.connect(lambda _r, _e: self._add_imported(entries))
+        self._import_lookup = job
+        job.start()
+
+    def _add_imported(self, entries):
+        import playlists
+        self._import_lookup = None
+        missing = sum(1 for e in entries if not e.get("url"))
+        entries = [e for e in entries if e.get("url")]
         known = {(s.get("url") or "").lower() for s in self.lib.stations}
         added = 0
         for entry in entries:
@@ -956,20 +977,32 @@ class OptionsPage(QWidget):
                else f" {len(entries) - added} were already in your list.")
             + ("" if not playlists.LAST_SKIPPED
                else f" {playlists.LAST_SKIPPED} were links to web pages, "
-                    "not streams, and were skipped."))
+                    "not streams, and were skipped.")
+            + ("" if not missing
+               else f" {missing} couldn't be found on radio-browser.info "
+                    "(the app only kept their directory number)."))
 
     def export_file(self):
         import playlists
+        import radioapps
         if not self.lib.stations:
             QMessageBox.information(self, "Export", "There's nothing to export.")
             return
         labels = [playlists.FORMATS[f] for f in playlists.EXPORT_FORMATS]
+        # Straight into another app's own list (build 113, task 152), for
+        # each app whose list is on this computer.
+        targets = radioapps.send_targets()
+        labels += [f"Send to {label}" for _key, label, _path in targets]
         label, ok = QInputDialog.getItem(
             self, "Export stations", "Save in which app's format?",
             labels, 0, False)
         if not ok:
             return
-        fmt = playlists.EXPORT_FORMATS[labels.index(label)]
+        index = labels.index(label)
+        if index >= len(playlists.EXPORT_FORMATS):
+            self._send_to(*targets[index - len(playlists.EXPORT_FORMATS)])
+            return
+        fmt = playlists.EXPORT_FORMATS[index]
         path, _ = QFileDialog.getSaveFileName(
             self, "Export stations",
             os.path.join(os.path.expanduser("~"),
@@ -982,6 +1015,52 @@ class OptionsPage(QWidget):
             QMessageBox.warning(self, "Export", str(exc))
             return
         QMessageBox.information(self, "Export", f"Saved to {path}")
+
+    def _send_to(self, key, label, path):
+        """Add frequencies to another app's own list: only adds, keeps a
+        backup of its file, and won't while that app is open."""
+        import radioapps
+        from dialogs import StationPickerDialog
+        title = f"Send to {label}"
+        if radioapps.is_running(key):
+            QMessageBox.information(
+                self, title,
+                f"{radioapps.app_name(key)} is open. Close it first, then "
+                "try again.\n\nIt saves its own list when it closes, which "
+                "would undo what Frequencies adds.")
+            return
+        stations = [s for s in self.lib.stations if radioapps.sendable(s)]
+        if not stations:
+            QMessageBox.information(
+                self, title,
+                "None of your frequencies can go to another app: folders "
+                "of songs, iBroadcast, YouTube and Twitch frequencies only "
+                "play here.")
+            return
+        picker = StationPickerDialog(
+            self, title=title, entries=stations,
+            subtitle=(f"Tick the frequencies to add to {radioapps.app_name(key)}. "
+                      "Nothing there is removed or changed, and links it "
+                      "already has are skipped. A backup of its list is "
+                      "saved first."),
+            action_label="Send")
+        if not picker.exec_():
+            return
+        chosen = picker.selected()
+        if not chosen:
+            return
+        try:
+            added, already, _left, saved = radioapps.send(key, path, chosen)
+        except radioapps.AppFileError as exc:
+            QMessageBox.warning(self, title, str(exc))
+            return
+        QMessageBox.information(
+            self, title,
+            f"Added {added} frequenc{'y' if added == 1 else 'ies'} to "
+            f"{radioapps.app_name(key)}."
+            + ("" if not already else
+               f" {already} {'was' if already == 1 else 'were'} already there.")
+            + f"\n\nIts old list was saved as:\n{saved}")
 
     def export_featured(self):
         from dialogs import StationPickerDialog
@@ -1140,10 +1219,7 @@ class OptionsPage(QWidget):
             "iBroadcast",
             "Your iBroadcast library, for iBroadcast stations.")
 
-        signed_in = bool(ibroadcast.load_tokens().get("refresh_token"))
-        self.ib_status = QLabel(
-            "Signed in." if signed_in
-            else "Not signed in. Add an iBroadcast station to connect.")
+        self.ib_status = QLabel("")
         self.ib_status.setProperty("role", "secondary")
         lay.addWidget(self.ib_status)
 
@@ -1162,12 +1238,26 @@ class OptionsPage(QWidget):
         clear = QPushButton("Empty the cache")
         clear.clicked.connect(self._ib_clear_cache)
         row.addWidget(clear)
-        out = QPushButton("Sign out")
-        out.clicked.connect(self._ib_sign_out)
-        row.addWidget(out)
+        self.ib_out = QPushButton("Sign out")
+        self.ib_out.clicked.connect(self._ib_sign_out)
+        row.addWidget(self.ib_out)
         row.addStretch(1)
         lay.addLayout(row)
         self.lay.addWidget(box)
+        self._refresh_ib()
+
+    def _refresh_ib(self):
+        """Sign out is grayed out while nobody is signed in (task 166)."""
+        if not hasattr(self, "ib_out"):
+            return
+        import ibroadcast
+        signed_in = bool(ibroadcast.load_tokens().get("refresh_token"))
+        self.ib_out.setEnabled(signed_in)
+        if signed_in:
+            self.ib_status.setText("Signed in.")
+        elif self.ib_status.text() != "Signed out.":
+            self.ib_status.setText(
+                "Not signed in. Add an iBroadcast station to connect.")
 
     def _ib_cache_dir(self):
         return os.path.join(os.path.dirname(storage.settings_path()),
@@ -1214,6 +1304,7 @@ class OptionsPage(QWidget):
             ibroadcast.revoke(saved["refresh_token"])
         ibroadcast.clear_tokens()
         self.ib_status.setText("Signed out.")
+        self.ib_out.setEnabled(False)
 
     def _build_twitch_chat(self):
         """Signing in to Twitch chat (build 82, task 92e), and in a dev
@@ -1384,7 +1475,7 @@ class OptionsPage(QWidget):
 
         # 12- or 24-hour, for every time the app shows.
         lay.addWidget(self._check(
-            "clock_12h", "Show times as 12-hour (1:30 PM)", default=False,
+            "clock_12h", "Show times as 12-hour (1:30 PM)", default=True,
             on_change=self._clock_changed))
 
         # Clippy's closed tips (task 143): all of them again, from tip 1.

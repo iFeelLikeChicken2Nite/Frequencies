@@ -16,6 +16,8 @@ disabled setting — each degrades to nothing rather than failing.
     integration.start()
 """
 
+import sys
+
 import crashlog
 import healthlog
 import storage
@@ -84,8 +86,13 @@ class Desktop(QObject):
     # -- MPRIS -------------------------------------------------------------
 
     def _start_mpris(self):
-        import mpris
-        bridge = mpris.MprisBridge(self)
+        if sys.platform == "win32":
+            # Windows' media controls in place of MPRIS (WP3).
+            import smtc
+            bridge = smtc.SmtcBridge(self)
+        else:
+            import mpris
+            bridge = mpris.MprisBridge(self)
         if not bridge.register():
             return                      # no session bus; media keys just won't
         self.mpris = bridge
@@ -329,7 +336,8 @@ class Desktop(QObject):
             if tag not in (station.get("tags") or []):
                 continue
             entry = storage.health_for(self.lib.health, station.get("id"))
-            if entry and entry.get("down"):
+            if (entry and entry.get("down")
+                    and storage.skipped_when_down(station)):
                 continue
             candidates.append(station)
         # Not the one already playing, if there is any alternative.

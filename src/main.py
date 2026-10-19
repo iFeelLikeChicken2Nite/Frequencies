@@ -14,6 +14,7 @@ before. Don't reverse it.
 import os
 import sys
 
+from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import QApplication
 
@@ -62,6 +63,75 @@ def app_icon():
     return icon
 
 
+# How to install the libraries a system is most likely to lack.
+INSTALL_HINTS = {
+    "libOpenGL.so.0": ("libopengl0", "libglvnd-opengl", "libglvnd",
+                       "libOpenGL0"),
+    "libGLdispatch.so.0": ("libglvnd0", "libglvnd", "libglvnd",
+                           "libglvnd"),
+    "libGL.so.1": ("libgl1", "libglvnd-glx", "libglvnd", "libGL1"),
+    "libEGL.so.1": ("libegl1", "libglvnd-egl", "libglvnd", "libEGL1"),
+    "libjack.so.0": ("libjack-jackd2-0", "pipewire-jack-audio-connection-kit-libs",
+                     "pipewire-jack", "libjack0"),
+    "libpipewire-0.3.so.0": ("libpipewire-0.3-0t64", "pipewire-libs",
+                             "libpipewire", "libpipewire-0_3-0"),
+    "libasound.so.2": ("libasound2t64", "alsa-lib", "alsa-lib",
+                       "libasound2"),
+    "libmpv.so.2": ("libmpv2", "mpv-libs", "mpv", "libmpv2"),
+}
+
+
+def windows_dll_folders():
+    """Windows (WP1): let python-mpv find libmpv-2.dll beside the app.
+
+    python-mpv looks for it on PATH. The packaged app keeps it next to
+    Frequencies.exe (or in its _internal folder); from source, in src/.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    folders = [getattr(sys, "_MEIPASS", None),
+               os.path.dirname(sys.executable), here,
+               os.path.join(here, "src")]
+    for folder in folders:
+        if folder and os.path.isdir(folder):
+            os.environ["PATH"] = folder + os.pathsep + os.environ.get("PATH", "")
+            try:
+                os.add_dll_directory(folder)
+            except (AttributeError, OSError):
+                pass
+
+
+def missing_library_window(error):
+    """A plain window naming the missing library and its package."""
+    import re
+    from PyQt5.QtWidgets import QMessageBox
+    found = re.search(r"(lib[\w.+-]+\.so[\d.]*)", error)
+    name = found.group(1) if found else "a system library"
+    lines = [f"Frequencies can't start because {name} is missing "
+             "from this computer."]
+    hint = INSTALL_HINTS.get(name)
+    if sys.platform == "win32":
+        lines = ["Frequencies can't start because its sound engine "
+                 "(libmpv-2.dll) didn't load.", "",
+                 "Put libmpv-2.dll back in the Frequencies folder, next "
+                 "to Frequencies.exe, then open Frequencies again."]
+    elif hint:
+        apt, dnf, pacman, zypper = hint
+        lines += ["", "Install it, then open Frequencies again:",
+                  f"Ubuntu, Debian, Mint, Pop!_OS:  sudo apt install {apt}",
+                  f"Fedora:  sudo dnf install {dnf}",
+                  f"Arch, Manjaro:  sudo pacman -S {pacman}",
+                  f"openSUSE:  sudo zypper install {zypper}"]
+    else:
+        lines += ["", "Install the package that provides it with your "
+                  "system's software manager, then open Frequencies again."]
+    lines += ["", f"Details: {error}"]
+    box = QMessageBox(QMessageBox.Critical, "Frequencies", "\n".join(lines))
+    box.setTextInteractionFlags(Qt.TextSelectableByMouse)
+    # Wide enough that each install command stays on one line.
+    box.setStyleSheet("QLabel#qt_msgbox_label { min-width: 560px; }")
+    box.exec_()
+
+
 def main():
     # Before anything Qt: a qFatal() prints to a stderr nobody sees when the
     # app is launched from a desktop icon, and crashlog is what catches it.
@@ -79,9 +149,25 @@ def main():
     import devmode
     crashlog.write("[dev] " + devmode.describe())
 
-    app = QApplication(sys.argv)
+    if sys.platform == "win32":
+        windows_dll_folders()
 
-    import player
+    app = QApplication(sys.argv)
+    if os.environ.get("FREQ_FALLBACK_LIBS"):
+        crashlog.write("[startup] using bundled copies of: "
+                       + os.environ["FREQ_FALLBACK_LIBS"])
+    if "/frequencies/tls/" in os.environ.get("GNUTLS_SYSTEM_PRIORITY_FILE", ""):
+        crashlog.write("[startup] using bundled TLS settings (no "
+                       "/etc/crypto-policies on this system)")
+
+    try:
+        import player
+    except OSError as exc:
+        # libmpv (or something it needs) wouldn't load (task 160): say
+        # which library, and how to get it, instead of a traceback.
+        crashlog.write(f"[startup] could not load the audio engine: {exc}")
+        missing_library_window(str(exc))
+        return 1
     import storage
 
     settings = storage.load_settings()
@@ -90,6 +176,7 @@ def main():
     storage.apply_station_eq_default(stations, settings)
     storage.lower_old_stall_timeout(settings)
     storage.raise_old_noise_volume(settings)
+    storage.apply_new_defaults_120(settings)
     history = storage.load_history()
 
     # ---- NEW: theme -------------------------------------------------------
@@ -164,7 +251,7 @@ def main():
     engine.on_tags = dispatch("on_tags")
     engine.set_normalize(settings.get("normalize", True))
     engine.set_noise_enabled(settings.get("noise_between_stations", True))
-    engine.set_noise_volume(settings.get("noise_volume", 70))
+    engine.set_noise_volume(settings.get("noise_volume", 100))
     engine.set_stall_timeout(settings.get("stall_timeout", 6))
     engine.set_audio_device(settings.get("audio_device", "auto"))
 
@@ -216,4 +303,10 @@ def main():
 
 
 if __name__ == "__main__":
+    if getattr(sys, "frozen", False) and sys.argv[1:2] == ["--webview-helper"]:
+        # Windows (WP2): the in-app browser runs as a second copy of the
+        # exe (there is no separate Python to run webview_helper.py).
+        del sys.argv[1]
+        import webview_helper
+        sys.exit(webview_helper.main())
     sys.exit(main())

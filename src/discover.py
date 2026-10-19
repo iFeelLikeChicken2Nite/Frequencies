@@ -438,7 +438,7 @@ class DiscoverPage(QWidget):
         # with them for height and was only visible once you had already
         # chosen a source — by which point a suggestion is beside the
         # point.
-        self.featured_head = QLabel("Curated frequencies · changes daily")
+        self.featured_head = QLabel("Curated frequencies · changes periodically")
         self.featured_head.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
         self.featured_head.setProperty("role", "section")
 
@@ -591,48 +591,39 @@ class DiscoverPage(QWidget):
         self.sources.set_columns((len(SOURCES) + 1) // 2)
 
     def _centre_featured(self):
-        """Share any spare width evenly on both sides of the tiles.
+        """Spread the tiles across the row, or scroll when they don't fit.
 
-        Centring is only right while there is room to spare. Once the
-        strip is long enough to scroll there is none, and centring a
-        scrolling list pushes its first tile off the left edge — so the
-        padding is recomputed from the width rather than set once.
+        The row used to be only as wide as its tiles and centred, which
+        left wide empty margins either side of a short list (task 159).
+        Now, while every tile fits, each one gets an equal share of the
+        width (up to half as wide again as normal), so the row reaches
+        toward the sidebar and the right panel. When they don't fit, the
+        tiles go back to their normal spacing and the row scrolls across
+        the whole width.
         """
         view = getattr(self, "featured_list", None)
         model = view.model() if view is not None else None
         if model is None or not model.rowCount():
             return
-        # Measured from the items themselves, not from the tile constant.
-        #
-        # FEATURED_TILE is the artwork's size, not the width a delegate
-        # ends up giving a tile — padding, the name underneath and the
-        # spacing all add to it. Guessing that number meant the padding
-        # was computed against a width the strip never had, so it was
-        # never actually centred.
-        first = view.visualRect(model.index(0, 0))
-        last = view.visualRect(model.index(model.rowCount() - 1, 0))
-        if not first.isValid() or first.width() <= 0:
-            return
-        if model.rowCount() == 1:
-            needed = first.width()
-        else:
-            # Right edge of the last tile minus the left edge of the
-            # first, in the view's own coordinates, plus whatever the
-            # scroll has already taken off the front.
-            offset = view.horizontalScrollBar().value()
-            needed = (last.right() + offset) - (first.left() + offset) + 1
-        # Only as wide as it needs to be, so the stretches can share out
-        # what is left. Wider than the room available, it fills the room
-        # and scrolls, which is when centring stops making sense.
-        room = self.width() - 28
-        wanted = min(needed + 2, max(120, room))
+        grid = view.gridSize()
+        base = getattr(self, "_featured_slot", None)
+        if base is None:
+            base = self._featured_slot = grid.width()
+        count = model.rowCount()
+        room = max(120, self.width() - 8)
+        fits = count * base <= room
+        slot = min(room // count, base * 3 // 2) if fits else base
+        if slot != grid.width():
+            view.setGridSize(QSize(slot, grid.height()))
+        # Each tile sits in the middle of its slot, so the row is exactly
+        # its slots wide.
+        wanted = count * slot if fits else room
         if getattr(self, "_featured_width", None) == wanted:
             return
         self._featured_width = wanted
         view.setFixedWidth(wanted)
         view.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarAlwaysOff if wanted >= needed
-            else Qt.ScrollBarAsNeeded)
+            Qt.ScrollBarAlwaysOff if fits else Qt.ScrollBarAsNeeded)
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
@@ -885,6 +876,8 @@ class DiscoverPage(QWidget):
              "url": e.get("url", ""),
              "_featured": e}
             for i, e in enumerate(self._featured)])
+        self._featured_width = None
+        QTimer.singleShot(0, self._centre_featured)
 
     # -- adding ------------------------------------------------------------
 

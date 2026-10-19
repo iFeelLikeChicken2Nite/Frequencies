@@ -1125,6 +1125,8 @@ class Playback:
 
     def _is_down(self, station_id):
         entry = self.lib.health.get(station_id) or {}
+        if not storage.skipped_when_down(self.lib.station_by_id(station_id)):
+            return False                # never passed over (task 156)
         return bool(entry.get("down"))
 
     def _step_past_down(self, ids, here, step, button):
@@ -1221,8 +1223,7 @@ class Playback:
         for station_id in others:
             if self.lib.station_by_id(station_id) is None:
                 continue
-            health = storage.health_for(self.lib.health, station_id) or {}
-            if health.get("down"):
+            if self._is_down(station_id):
                 continue
             pool.append(station_id)
         # Everything marked down is still better than refusing to move.

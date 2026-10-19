@@ -15,6 +15,9 @@ import ctypes
 import ctypes.util
 import logging
 import os
+import sys
+
+import appdirs
 
 log = logging.getLogger("frequencies.projectm")
 
@@ -24,6 +27,13 @@ CANDIDATE_LIBRARIES = (
     "libprojectM-4.so",
     "libprojectM.so.4",
 )
+if sys.platform == "win32":
+    # Windows (WP2): the DLL ships beside the code, by full path so its
+    # own DLLs (GLEW, the MinGW runtime) load from the same folder.
+    # libprojectM-4-4.dll is MSYS2's name, projectM-4.dll vcpkg's.
+    CANDIDATE_LIBRARIES = tuple(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
+        for name in ("libprojectM-4-4.dll", "projectM-4.dll"))
 
 def _bundled_presets():
     """The pack that ships beside the code.
@@ -42,8 +52,7 @@ def _bundled_presets():
 
 # Where the presets might be, nearest first.
 PRESET_DIRS = _bundled_presets() + (
-    os.path.join(os.path.expanduser("~"), ".config", "frequencies",
-                 "presets"),
+    os.path.join(appdirs.config_base(), "frequencies", "presets"),
     os.path.join(os.path.expanduser("~"), ".local", "share", "projectM",
                  "presets"),
     "/usr/share/projectM/presets",
@@ -130,6 +139,9 @@ def availability():
     labeled.
     """
     library = find_library()
+    if library is None and sys.platform == "win32":
+        return False, ("projectM is missing from this build, so the "
+                       "visualizer can't draw.")
     if library is None:
         return False, (
             "projectM isn't installed. On Fedora: sudo dnf install "
@@ -156,6 +168,25 @@ def availability():
     return True, f"projectM is available, with presets in {presets}."
 
 
+def _init_glew(library):
+    """Windows (WP2): load GLEW's GL entry points for the current context.
+
+    The Windows projectM calls OpenGL through GLEW, whose function
+    pointers stay NULL until glewInit() runs, and projectM leaves that to
+    the program that owns the context. Without it projectm_create() dies
+    writing through a NULL pointer. glewExperimental, because a core
+    profile context doesn't list its extensions the old way.
+    """
+    try:
+        glew = ctypes.CDLL(os.path.join(os.path.dirname(library._name),
+                                        "glew32.dll"))
+        ctypes.c_ubyte.in_dll(glew, "glewExperimental").value = 1
+        result = glew.glewInit()
+        log.info("glewInit returned %d", result)
+    except (OSError, ValueError) as error:
+        log.warning("glewInit failed: %s", error)
+
+
 class ProjectM:
     """A projectM instance, driven through its C API.
 
@@ -171,6 +202,8 @@ class ProjectM:
         self._lib = library
         self._fbo_capable = None
 
+        if sys.platform == "win32":
+            _init_glew(library)
         library.projectm_create.restype = ctypes.c_void_p
         self._handle = library.projectm_create()
         log.info("projectm_create returned %r", self._handle)

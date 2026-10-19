@@ -23,6 +23,7 @@ A normal `./build-appimage-fedora.sh` is a user build.
 """
 
 import os
+import sys
 
 MARKER = "dev-build"
 
@@ -41,6 +42,8 @@ def _work_out():
         return False, "FREQ_DEV=0"
     if os.path.exists(os.path.join(_here(), MARKER)):
         return True, "built with --dev"
+    if getattr(sys, "frozen", False):
+        return False, "Windows build"
     inside_appimage = (bool(os.environ.get("APPIMAGE"))
                        or "/.mount_" in _here())
     if inside_appimage:

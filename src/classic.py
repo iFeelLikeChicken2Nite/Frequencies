@@ -288,7 +288,11 @@ class ClassicSession(QObject):
         for folder in winampskin.bundled_skin_folders():
             if not os.path.isdir(folder):
                 continue
-            for name in sorted(os.listdir(folder)):
+            # The Frequencies skin (FreqAmp) first: it is the default
+            # since build 120 (task 168); sorted alone put base.wsz first.
+            names = sorted(os.listdir(folder),
+                           key=lambda n: (n != winampskin.OWN_SKIN, n))
+            for name in names:
                 if not name.lower().endswith((".wsz", ".zip")):
                     continue
                 candidate = os.path.join(folder, name)
@@ -311,7 +315,7 @@ class ClassicSession(QObject):
             return False
         self._log_skin(self._skin)
 
-        scale = int(self.lib.settings.get("skin_scale", 2))
+        scale = int(self.lib.settings.get("skin_scale", 1))
         self.dock = ClassicDock()
         self.dock.closed.connect(self._on_dock_closed)
         self.dock.set_skin(self._skin)
@@ -555,7 +559,7 @@ class ClassicSession(QObject):
         """Show or hide a panel, building it if it was never built."""
         panel = getattr(self, which, None)
         if panel is None:
-            scale = int(self.lib.settings.get("skin_scale", 2))
+            scale = int(self.lib.settings.get("skin_scale", 1))
             from classicextras import (EqualizerWindow, PlaylistWindow,
                                        TagWindow)
             factory = {
@@ -760,7 +764,7 @@ class ClassicSession(QObject):
         w.on_menu = self.titlebar_menu
         w.on_clutter = self._clutter
         w.clutter_state["d"] = int(
-            self.lib.settings.get("skin_scale", 2)) > 1
+            self.lib.settings.get("skin_scale", 1)) > 1
         w.closed.connect(self._on_dock_closed)
         w.set_volume(int(self.lib.settings.get("volume", 80)))
         w.set_shuffle(bool(self.lib.settings.get("shuffle", False)))
@@ -937,7 +941,7 @@ class ClassicSession(QObject):
             self.open()
             return
 
-        scale = int(self.lib.settings.get("skin_scale", 2))
+        scale = int(self.lib.settings.get("skin_scale", 1))
         self.dock.set_skin(self._skin)
         showing = {which: (getattr(self, which) is not None
                            and getattr(self, which).isVisible())
@@ -1056,7 +1060,7 @@ class ClassicSession(QObject):
             self._log_vis(f"shipped disabled list not applied: {e}")
         self._visualizer = VisualizerWindow(
             skin=self._skin,
-            scale=int(settings.get("skin_scale", 2)),
+            scale=int(settings.get("skin_scale", 1)),
             source=settings.get("visualizer_source") or None,
             gain=float(settings.get("visualizer_gain", 1.0)),
             disabled=settings.get("visualizer_disabled") or (),

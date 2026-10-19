@@ -448,6 +448,8 @@ class FrequenciesWindow(Shell):
         self.companion = companion.Companion(
             self, self.lib.settings, self.lib.save_settings,
             targets={
+                "search": lambda: self.discover_page.sources._buttons.get(
+                    "search"),
                 "added": lambda: self.sidebar._buttons["stations"][0],
                 "queue": lambda: self.stations_page.list,
                 "shazam": lambda: self.player.shazam_btn,
@@ -462,11 +464,19 @@ class FrequenciesWindow(Shell):
                 "sidebar": lambda: self.sidebar,
                 "down": self._clippy_down_row,
                 "twitch": self._clippy_twitch_row,
+                "art": lambda: self._clippy_row(
+                    getattr(self, "_clippy_art_id", None)),
+                "lyrics": lambda: (self.panel.lyrics
+                                   if self.panel.lyrics.view.isVisible()
+                                   else None),
             },
             is_playing=lambda: bool(getattr(self.player, "_playing", False)),
             winamp=lambda: getattr(self._classic, "dock", None),
             photos=(self._clippy_offer_photos, self._clippy_photos_on))
         self.companion.tip("welcome")
+        # Tip 1.5 is done once Search is clicked (task 163).
+        self.discover_page.sources.chosen.connect(
+            lambda key: key == "search" and self.companion.done("search"))
 
     def _clippy_offer_photos(self):
         """Clippy's photo pack question: only while it is off and there
@@ -492,8 +502,11 @@ class FrequenciesWindow(Shell):
     def _clippy_twitch_row(self):
         """Tip 12's place: the Twitch frequency just added, in Saved
         Frequencies (task 150)."""
+        return self._clippy_row(getattr(self, "_clippy_twitch_id", None))
+
+    def _clippy_row(self, station_id):
+        """A saved frequency's row, for a tip beside it (tips 12 and 14)."""
         view = self.stations_page.list
-        station_id = getattr(self, "_clippy_twitch_id", None)
         if not station_id or not view.isVisible():
             return None
         row = view.model_.row_of(station_id)
@@ -1026,6 +1039,7 @@ class FrequenciesWindow(Shell):
         if self._classic.open():
             self.hide()
             self.companion.tip("winamp")
+            self._llama_once()
             return
 
         # Only now the locker, and only as a way to fix it.
@@ -1037,10 +1051,33 @@ class FrequenciesWindow(Shell):
         if self._classic.open():
             self.hide()
             self.companion.tip("winamp")
+            self._llama_once()
             return
         self._classic = None
         self.notify("No skin chosen, so the classic player has "
                     "nothing to draw itself with.", transient=True)
+
+    LLAMA = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "sounds", "winamp-llama.mp3")
+
+    def _llama_once(self):
+        """Winamp's own greeting the first time the Winamp view opens
+        (build 114, task 154). Only into silence: with a station or song
+        playing it waits for a later opening, and once played it never
+        plays again."""
+        import crashlog
+        if self.lib.settings.get("winamp_llama_played"):
+            return
+        if self.player._playing or not os.path.exists(self.LLAMA):
+            crashlog.write("[winamp] llama clip not played: "
+                           + ("something is playing" if self.player._playing
+                              else "the clip is missing"))
+            return
+        self.lib.settings["winamp_llama_played"] = True
+        self.lib.save_settings()
+        crashlog.write("[winamp] first Winamp view: playing the llama clip")
+        engine = self.playback.player
+        engine.clips.play(self.LLAMA, engine._base_volume)
 
     def open_visualizer(self):
         """The visualizer stands on its own — it does not need the skinned
@@ -2154,6 +2191,10 @@ class FrequenciesWindow(Shell):
         self.reload()
         self._added_message(
             f"Added {storage.station_display_name(station)} to your stations.")
+        # Tip 14 (task 173) every time, asked first so tips 2 and 12,
+        # the newer asks, show before it.
+        self._clippy_art_id = station.get("id")
+        self.companion.tip("art")
         self.companion.tip("added", self.sidebar._buttons["stations"][0])
         if station.get("kind") == "twitch":
             self._clippy_twitch_id = station.get("id")
@@ -2664,7 +2705,7 @@ class FrequenciesWindow(Shell):
 
     def _after_skip(self):
         """Follow the station in the list, if that is wanted."""
-        if self.lib.settings.get("jump_on_change", False):
+        if self.lib.settings.get("jump_on_change", True):
             self.jump_to_playing()
 
     def _on_skip(self, direction):
@@ -2986,7 +3027,7 @@ class FrequenciesWindow(Shell):
         for attr, name, label in (("schedule_btn", "page_schedule",
                                    "What is on, and when"),
                                   ("help_btn", "page_help",
-                                   "Dog jokes, for now")):
+                                   "Questions and answers")):
             button = getattr(self.sidebar, attr, None)
             if button is not None:
                 button.setToolTip(keys.tip(s, label, name))
@@ -3273,7 +3314,10 @@ class FrequenciesWindow(Shell):
         self.notify("iBroadcast needs you to sign in again." if signed_out
                     else "Couldn't reach iBroadcast to renew the sign-in.",
                     transient=True)
-        if self.lib.settings.get("auto_skip_broken", True):
+        # Never skipped away from by itself (task 156): it stays, so
+        # signing in again picks up where it was.
+        if (self.lib.settings.get("auto_skip_broken", True)
+                and storage.skipped_when_down(station)):
             self.playback.next()
 
     def _ibroadcast_fall_back(self):
@@ -4437,7 +4481,8 @@ class FrequenciesWindow(Shell):
                             (self.playback.current or {}).get("id"),
                             reason="no audio", down_after=1)
         storage.save_health(self.lib.health)
-        if self.lib.settings.get("auto_skip_broken", True):
+        if (self.lib.settings.get("auto_skip_broken", True)
+                and storage.skipped_when_down(self.playback.current)):
             self.playback.next()
 
     # -- callbacks from Shazam / lyrics -------------------------------------
@@ -4609,6 +4654,9 @@ class FrequenciesWindow(Shell):
         self.now_playing.set_lyrics(lines, message)
         self.panel.set_lyrics(lines, message)
         self.panel.set_available(self._lyrics, self._bio)
+        if self._lyrics:
+            # Clippy's tip 13, the first time lyrics are found (task 155).
+            self.companion.tip("lyrics")
         self._refresh_fullscreen_state()
 
     def _show_star_for(self, title, artist):

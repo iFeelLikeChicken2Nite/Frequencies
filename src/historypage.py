@@ -303,7 +303,9 @@ class SongRow(QWidget):
         station.setToolTip(entry.get("station") or "")
         lay.addWidget(station, 3)
 
-        self.star = QToolButton()
+        # Parented now: shown before it is laid out, a parentless button
+        # flashes up as a window of its own on Windows.
+        self.star = QToolButton(self)
         self._forward_menu(self.star, entry)
         self.star.setCheckable(True)
         self.star.setChecked(bool(bool(entry.get("favorite"))))

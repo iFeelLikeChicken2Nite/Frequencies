@@ -33,6 +33,7 @@ from PyQt5.QtWidgets import (QGraphicsOpacityEffect,QAbstractItemView, QApplicat
                              QStackedWidget, QToolButton, QVBoxLayout,
                              QWidget)
 
+import appdirs
 import theme
 from jobs import Job
 from nowplaying import NowPlaying
@@ -55,8 +56,7 @@ def _icon_dirs():
     here = os.path.dirname(os.path.abspath(__file__))
     return (os.path.join(here, "icons"),
             os.path.join(here, "..", "icons"),
-            os.path.join(os.path.expanduser("~"), ".config", "frequencies",
-                         "icons"))
+            os.path.join(appdirs.config_base(), "frequencies", "icons"))
 
 
 def icon_file(name):
@@ -1963,7 +1963,7 @@ class Sidebar(QWidget):
         self.help_btn.setIcon(icon("help", 18, T["text2"]))
         self.help_btn.setIconSize(QSize(18, 18))
         self.help_btn.setCheckable(True)
-        self.help_btn.setToolTip("Dog jokes, for now")
+        self.help_btn.setToolTip("Questions and answers")
         self.help_btn.clicked.connect(lambda: self._select("help"))
         lay.addWidget(self.help_btn)
         self._register_extra("help", self.help_btn, "Help")

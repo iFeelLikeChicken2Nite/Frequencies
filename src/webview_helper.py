@@ -523,6 +523,12 @@ def main():
         return 0
 
     if dialog.exec_() and dialog.result_url:
+        answer = os.environ.get("FREQ_HELPER_OUT")
+        if answer:
+            # Windows (WP2): the frozen app may have no stdout.
+            with open(answer, "w", encoding="utf-8") as f:
+                f.write(dialog.result_url)
+            return 0
         # The only thing on stdout, so the caller can just read it.
         sys.stdout.write(dialog.result_url)
         sys.stdout.flush()

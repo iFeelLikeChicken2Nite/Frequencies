@@ -22,6 +22,7 @@ import locale
 import random
 import os
 import re
+import sys
 import tempfile
 import threading
 import time
@@ -48,6 +49,51 @@ import mpv
 import playlists
 
 MAX_VOLUME = 100
+
+
+# What the app calls itself to stream servers (task 162).
+#
+# mpv's own name ("libmpv") is one some servers treat specially: Nightwave
+# Plaza sends it to an HLS playlist that never plays, while every other
+# player gets the MP3 it asked for. So every handle that fetches a station
+# says who it is, as the health check already did. A station's own
+# User-Agent header (Twitch) still wins: ffmpeg sends that one instead.
+STREAM_AGENT = "Frequencies/1.5"
+
+
+def system_ca_file():
+    """The system's bundle of trusted certificates, wherever it lives.
+
+    mpv's TLS library looks for it where the build machine keeps it.
+    Built on Fedora and run on Ubuntu, that is the wrong folder, so no
+    https stream could be verified and every one of them failed at once
+    (task 162, the Ubuntu VM). Naming the file outright works on all of
+    them.
+    """
+    for path in (os.environ.get("SSL_CERT_FILE"),
+                 "/etc/ssl/certs/ca-certificates.crt",       # Debian, Ubuntu, Arch
+                 "/etc/pki/tls/certs/ca-bundle.crt",         # Fedora
+                 "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+                 "/etc/ssl/ca-bundle.pem",                   # openSUSE
+                 "/etc/ssl/cert.pem"):
+        if path and os.path.isfile(path):
+            return path
+    return None
+
+
+# Every handle that fetches a station: who it is, and what to trust.
+_TLS_CA = system_ca_file()
+STREAM_OPTS = {"user_agent": STREAM_AGENT,
+               **({"tls_ca_file": _TLS_CA} if _TLS_CA else {})}
+
+# Every handle, on Windows: none of mpv's built-in Lua scripts (stats,
+# console, menus). The app uses none of them, and there each Lua error
+# they catch is a Windows exception that faulthandler writes to the log
+# as a "fatal exception" with every thread's stack, dozens per tune.
+NO_SCRIPTS = ({"load_stats_overlay": False, "load_console": False,
+               "load_auto_profiles": False, "load_select": False,
+               "load_commands": False, "load_positioning": False}
+              if sys.platform == "win32" else {})
 
 
 def force_c_numeric_locale():
@@ -460,6 +506,7 @@ class NoisePlayer:
                 # The output chosen in Settings, not the desktop's
                 # default (task 83).
                 audio_device=self._device,
+                **NO_SCRIPTS,
             )
         return self._mpv
 
@@ -796,6 +843,8 @@ def capture_stream_to_wav(url, seconds=6, out_path=None, start_seconds=None,
             audio_samplerate=16000,
             length=seconds,
             cache=True,
+            **STREAM_OPTS,
+            **NO_SCRIPTS,
             # Where to capture from.
             #
             # A live stream has no meaningful position - you always get
@@ -1034,6 +1083,8 @@ class FillerPlayer:
                 # alone it is "<cover station> - mpv", which read as a
                 # second app (build 71, task 75).
                 title="Frequencies (ad cover)",
+                **STREAM_OPTS,
+                **NO_SCRIPTS,
                 # The output chosen in Settings, not the desktop's
                 # default (task 83).
                 audio_device=self._device,
@@ -1657,6 +1708,61 @@ class MpvQueue:
         return not self._thread.is_alive()
 
 
+class ClipPlayer:
+    """A short sound played once, on an mpv of its own (build 114, task
+    154: Winamp's llama the first time the Winamp view opens).
+
+    Its mpv lives and dies on one thread of its own (never the window's),
+    is named "Frequencies" in the mixer, uses the output chosen in
+    Settings, and is closed as soon as the clip ends.
+    """
+
+    LONGEST = 20.0              # seconds a clip may take before it is cut
+
+    def __init__(self):
+        self._device = "auto"
+        self._done = threading.Event()
+        self._thread = None
+
+    def set_audio_device(self, name):
+        self._device = name or "auto"
+
+    def play(self, path, volume):
+        if self._thread is not None and self._thread.is_alive():
+            return                      # one at a time
+        self._done.clear()
+        self._thread = threading.Thread(
+            target=self._play, args=(path, volume), daemon=True,
+            name="ClipPlayer")
+        self._thread.start()
+
+    def _play(self, path, volume):
+        try:
+            force_c_numeric_locale()
+            handle = mpv.MPV(vid="no", vo="null", video=False, ytdl=False,
+                             audio_display="no", terminal=False, idle=True,
+                             volume=max(0, min(MAX_VOLUME, int(volume))),
+                             audio_client_name="Frequencies",
+                             title="Frequencies", audio_device=self._device,
+                             **NO_SCRIPTS)
+        except Exception as exc:                # noqa: BLE001
+            _log(f"[player] clip could not start: {exc!r}")
+            return
+        try:
+            @handle.event_callback("end-file")
+            def _ended(_event):
+                self._done.set()
+            handle.play(path)
+            self._done.wait(self.LONGEST)
+        finally:
+            handle.terminate()
+
+    def shutdown(self):
+        self._done.set()
+        if self._thread is not None:
+            self._thread.join(2.0)
+
+
 class Player:
     # Read from mpv's own reports (see _on_prop), never asked for on the
     # GUI thread. Positions are only trusted once the file asked for has
@@ -1753,7 +1859,19 @@ class Player:
         # libmpv does is check LC_NUMERIC, and Qt will have changed it.
         force_c_numeric_locale()
 
+        # mpv's own warnings and errors, newest last (task 162). A stream
+        # that never starts used to leave only "never started playing" in
+        # the log; the reason (a refused connection, a 403, a bad
+        # certificate) was mpv's and went nowhere. Kept here, written out
+        # when the app gives up. Filled on mpv's event thread: a deque
+        # append is safe there and costs nothing.
+        import collections
+        self._mpv_said = collections.deque(maxlen=8)
         self._mpv = mpv.MPV(
+            log_handler=self._mpv_log,
+            loglevel="warn",
+            **STREAM_OPTS,
+            **NO_SCRIPTS,
             # This is a radio player - it never shows video. Forcing the
             # "null" video output (rather than just deselecting the video
             # track) stops mpv from ever probing/initializing a GPU-based
@@ -1821,6 +1939,7 @@ class Player:
         # Built now, not at the first station change.
         self.noise.warm_up()
         self.filler = FillerPlayer()
+        self.clips = ClipPlayer()
         self._noise_enabled = True
 
         self._mpv.event_callback("end-file")(self._on_end_file)
@@ -2038,7 +2157,8 @@ class Player:
             by_system.setdefault(system, []).append(
                 (name, (entry.get("description") or name).strip()))
 
-        for preferred in ("pipewire", "pulse", "alsa"):
+        # Windows (WP1): WASAPI is the system's own, like PipeWire here.
+        for preferred in ("pipewire", "pulse", "wasapi", "alsa"):
             devices = by_system.get(preferred)
             if not devices:
                 continue
@@ -2067,6 +2187,7 @@ class Player:
         self._queue.put("audio-device", write)
         self.noise.set_audio_device(name)
         self.filler.set_audio_device(name)
+        self.clips.set_audio_device(name)
         _log(f"[player] audio output: {name or 'auto'} "
              f"(station, static and ad cover)")
 
@@ -2133,6 +2254,7 @@ class Player:
         silence and the new file.
         """
         self._current_url = url
+        self._mpv_said.clear()
         with self._prop_lock:
             # Until mpv has started this file, its reports are about the
             # last one.
@@ -2959,6 +3081,7 @@ class Player:
     def shutdown(self):
         self.noise.shutdown()
         self.filler.shutdown()
+        self.clips.shutdown()
         # Nothing may still be calling mpv when its handle goes: a call
         # on a terminated handle is a crash. What is queued is dropped
         # (terminate stops everything anyway); a call already running
@@ -3011,6 +3134,26 @@ class Player:
             return float(value) if value else None
         except Exception:
             return None
+
+    def _mpv_log(self, level, component, message):
+        # Errors, and warnings about getting the stream (network, the
+        # stream layer, the demuxer); not the decoder's per-packet chatter.
+        if level != "error" and component not in ("ffmpeg", "stream") \
+                and not str(component).startswith("demux"):
+            return
+        line = f"{level} {component}: {(message or '').strip()}"
+        if not self._mpv_said or self._mpv_said[-1] != line:
+            self._mpv_said.append(line)
+
+    def _log_mpv_said(self, url):
+        """Write what mpv said about `url` since it was asked to play it."""
+        said = list(self._mpv_said)
+        self._mpv_said.clear()
+        for line in said:
+            _log(f"[stream] mpv said: {line}")
+        if not said:
+            _log(f"[stream] mpv said nothing about {url} (no error: it "
+                 f"was still connecting)")
 
     def set_stall_timeout(self, seconds):
         self._stall_timeout = max(2, int(seconds or 6))
@@ -3240,6 +3383,7 @@ class Player:
             self.noise.fade_out_and_stop(self._crossfade_ms)
             self.filler.stop()
             self._ad_state = "none"
+            self._log_mpv_said(url)
             self._on_state(PlayerState.ERROR,
                            "That stream never started playing.")
             if self._on_stalled is not None:
@@ -3374,6 +3518,10 @@ class Player:
                 self._on_state(PlayerState.NO_AUDIO,
                                "Couldn't initialize output.")
             else:
+                # A moment later: mpv's reason can arrive just after the
+                # end-file that it explains, on this same thread.
+                threading.Timer(0.5, self._log_mpv_said,
+                                (self._current_url,)).start()
                 self._on_state(PlayerState.ERROR,
                                "Couldn't connect to that stream.")
         elif reason == 0 and self._current_url is not None:

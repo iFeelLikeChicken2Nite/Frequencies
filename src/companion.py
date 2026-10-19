@@ -36,6 +36,10 @@ HERE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "companion")
 FRAME_W, FRAME_H = 124, 93
 SETTING = "companion_closed"
 OPEN_SETTING = "companion_open_seconds"   # time the app has been open
+# Tip 1's "Too bad!" is said once ever (task 172); after that the No
+# answer is the same words without it, until "Reset Clippy's hot tips".
+TOO_BAD = "Too bad! "
+TOO_BAD_SETTING = "companion_too_bad_said"
 GAP = 4.0             # "a few seconds" between one tip closing and the next
 PLAYED = 5.0          # "playing their first frequency for a few seconds"
 SHARE_AT = 20 * 60    # tip 6, "about 20 minutes" in (plus a little, random)
@@ -51,6 +55,11 @@ GO_ON = ("Click Add Frequency… to find a station, paste a stream link, or "
 TIPS = {
     "welcome": ("1", "Hi, it looks like you want to listen to the radio! "
                      "Would you like some help with that?", "center"),
+    # Asked 2026-10-19 (task 163): after tip 1's answer, beside the Search
+    # button once the Add Frequency page is showing.
+    "search": ("1.5", "Try clicking the Search button, the big button with "
+                      "the magnifying glass, and searching \"electro\"!",
+               "beside"),
     "added": ("2", "Nice pick! It's in Saved Frequencies now. Double-click "
                    "it to tune in, or right-click it for tags, sharing and "
                    "more.", "beside"),
@@ -122,11 +131,22 @@ TIPS = {
     "twitch": ("12", "Twitch streams have forced 30-second ads, so by "
                      "default, Frequencies will cover them. You can change "
                      "that in the station options.", "row"),
+    # Asked 2026-10-19 (task 173): every time a frequency is added.
+    "art": ("14", "Frequencies can find the right station art for this "
+                  "frequency! Open its station settings and click \"Find\" "
+                  "on the Display tab.", "row"),
+    # Asked 2026-10-19 (task 155): the first time lyrics are found.
+    "lyrics": ("13", "If the lyrics are ever out of sync, double-click the "
+                     "current lyric line to sync them up again.", "inside"),
 }
+
+# Tips that come back each time they are asked for (task 173): closing
+# one ends that showing only.
+REPEATING = {"art"}
 
 # Tips that ask Yes or No, and what he says after each answer.
 ASKS = {
-    "welcome": ("Great! " + GO_ON, "Too bad! " + GO_ON),
+    "welcome": ("Great! " + GO_ON, TOO_BAD + GO_ON),
     "photos": ("Great! The artist photo pack is downloading now. You can "
                "turn it off any time in Settings > Lyrics and artists.",
                "No problem! You can turn it on any time in Settings > "
@@ -405,6 +425,7 @@ class Companion:
         """Settings > "Reset Clippy's hot tips": every tip again, from 1."""
         self.settings[SETTING] = []
         self.settings[OPEN_SETTING] = 0
+        self.settings[TOO_BAD_SETTING] = False
         self.save()
         self.open_s = 0
         self.answered = {}
@@ -436,6 +457,7 @@ class Companion:
         quiet = self.current is None and now - self.last_close >= GAP
         if quiet:
             for tip_id, due in (
+                    ("search", "welcome" in closed),
                     ("queue", "added" in closed),
                     ("shazam", "queue" in closed and playing
                      and now - self.play_since >= PLAYED),
@@ -585,7 +607,14 @@ class Companion:
 
     def _answer_text(self, tip_id):
         yes, no = ASKS[tip_id]
-        return yes if self.answered.get(tip_id) == "yes" else no
+        if self.answered.get(tip_id) == "yes":
+            return yes
+        if no.startswith(TOO_BAD):
+            if self.settings.get(TOO_BAD_SETTING):
+                return no[len(TOO_BAD):]
+            self.settings[TOO_BAD_SETTING] = True
+            self.save()
+        return no
 
     def update_bubble(self):
         if self.current is not None:
@@ -595,14 +624,31 @@ class Companion:
         if self.current is None:
             return
         tip_id = self.current
-        self.settings[SETTING] = sorted(self.closed() | {tip_id})
-        self.save()
+        if tip_id in REPEATING:
+            if tip_id in self.wanted:
+                self.wanted.remove(tip_id)
+        else:
+            self.settings[SETTING] = sorted(self.closed() | {tip_id})
+            self.save()
         crashlog.write(f"[companion] tip {tip_id!r} closed")
         self.current = None
         self.last_close = time.monotonic()
         self._idle.stop()
         self.bubble.hide()
         self.sprite.play("GoodBye", self._gone)
+
+    def done(self, tip_id):
+        """The user did what the tip says: it never needs to show."""
+        if tip_id in self.closed():
+            return
+        if self.current == tip_id:
+            self.close_tip()
+            return
+        self.settings[SETTING] = sorted(self.closed() | {tip_id})
+        self.save()
+        if tip_id in self.wanted:
+            self.wanted.remove(tip_id)
+        crashlog.write(f"[companion] tip {tip_id!r} done before it showed")
 
     def _gone(self):
         if self.current is not None:

@@ -163,6 +163,11 @@ def is_available():
     Checked by asking the helper's own interpreter, so this process
     still never imports it.
     """
+    if getattr(sys, "frozen", False):
+        # Windows (WP2): the helper is the app itself, started with
+        # --webview-helper; QtWebEngine is bundled or it isn't.
+        import importlib.util
+        return importlib.util.find_spec("PyQt5.QtWebEngineWidgets") is not None
     try:
         result = subprocess.run(
             [sys.executable, "-c",
@@ -197,10 +202,20 @@ def _run(mode, *args, timeout=900):
 
     out = tempfile.TemporaryFile(mode="w+")
     err = tempfile.TemporaryFile(mode="w+")
+    env = _helper_env(mode)
+    command = [sys.executable, _helper_path(), mode, *args]
+    result_file = None
+    if getattr(sys, "frozen", False):
+        # Windows (WP2): sys.executable is Frequencies.exe, which runs
+        # the helper when started with --webview-helper. A windowed exe
+        # may have no stdout, so the answer comes back in a file.
+        command = [sys.executable, "--webview-helper", mode, *args]
+        handle, result_file = tempfile.mkstemp(prefix="freq-helper-")
+        os.close(handle)
+        env["FREQ_HELPER_OUT"] = result_file
     try:
         child = subprocess.Popen(
-            [sys.executable, _helper_path(), mode, *args],
-            stdout=out, stderr=err, env=_helper_env(mode),
+            command, stdout=out, stderr=err, env=env,
         )
     except Exception:  # noqa: BLE001
         return ""
@@ -223,6 +238,9 @@ def _run(mode, *args, timeout=900):
         complaints = err.read().strip()
         if complaints:
             log.warning("browser helper said: %s", complaints[:2000])
+        if result_file:
+            with open(result_file, "r", encoding="utf-8") as f:
+                return (f.read() or "").strip()
         out.seek(0)
         return (out.read() or "").strip()
     except Exception:  # noqa: BLE001
@@ -230,6 +248,11 @@ def _run(mode, *args, timeout=900):
     finally:
         out.close()
         err.close()
+        if result_file:
+            try:
+                os.remove(result_file)
+            except OSError:
+                pass
 
 def pick_image(query):
     """Open the image picker; return the chosen URL, or ""."""

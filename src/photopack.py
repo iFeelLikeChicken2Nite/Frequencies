@@ -135,8 +135,8 @@ def save_addresses(pack=None, reports=None):
 # -- the unpacked pack --------------------------------------------------------
 
 def pack_dir():
-    base = os.environ.get("XDG_DATA_HOME") or os.path.join(
-        os.path.expanduser("~"), ".local", "share")
+    import appdirs
+    base = appdirs.data_base()
     return os.path.join(base, "frequencies", PACK_DIR)
 
 

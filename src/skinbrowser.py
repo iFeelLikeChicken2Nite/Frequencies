@@ -8,7 +8,9 @@ format has no preview image, and rendering the thing itself is both more
 honest and less work than compositing a fake one.
 """
 
+import filecmp
 import os
+import shutil
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (QCheckBox, QDialog, QFileDialog, QHBoxLayout,
@@ -35,7 +37,11 @@ class SkinBrowser(QDialog):
         self._current = current or ""
         self._eq_fills = dict(eq_fills or {})
         self._preview = None
+        self._preview_eq = None
         self._museum = None
+        # "Drag one onto this window" (WP3): the window said it and
+        # nothing took the drop, on Linux and Windows alike.
+        self.setAcceptDrops(True)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(16, 16, 16, 12)
@@ -184,7 +190,7 @@ class SkinBrowser(QDialog):
         self._current = path
         name = getattr(skin, "name", os.path.basename(path))
         self.blank_eq.blockSignals(True)
-        self.blank_eq.setChecked(not self._eq_fills.get(name, True))
+        self.blank_eq.setChecked(bool(self._eq_fills.get(name, False)))
         self.blank_eq.blockSignals(False)
 
         # Announced on selection rather than on close: seeing it applied to
@@ -199,6 +205,7 @@ class SkinBrowser(QDialog):
         self.preview_note.setVisible(True)
 
     def _clear_preview(self):
+        self._preview_eq = None
         if self._preview is not None:
             self._preview.setParent(None)
             self._preview.deleteLater()
@@ -234,7 +241,11 @@ class SkinBrowser(QDialog):
             from classicextras import (EqualizerWindow, PlaylistWindow,
                                        TagWindow)
             if getattr(skin, "has_equalizer", lambda: True)():
-                panels.append(EqualizerWindow(skin, scale=1, parent=holder))
+                eq = EqualizerWindow(skin, scale=1, parent=holder)
+                eq.eq_fill = bool(self._eq_fills.get(
+                    getattr(skin, "name", ""), False))
+                self._preview_eq = eq
+                panels.append(eq)
             panels.append(TagWindow(skin, scale=1, parent=holder))
             playlist = PlaylistWindow(skin, scale=1, parent=holder,
                                       height=140)
@@ -268,5 +279,70 @@ class SkinBrowser(QDialog):
         except Exception:                       # noqa: BLE001
             return
         name = getattr(skin, "name", "")
-        self._eq_fills[name] = not blank
-        self.eq_fill_changed.emit(name, not blank)
+        # Checked means blank, as storage.eq_fill_for_skin has it: the
+        # box was saved the wrong way round until WP3.
+        self._eq_fills[name] = bool(blank)
+        self.eq_fill_changed.emit(name, bool(blank))
+        if self._preview_eq is not None:
+            self._preview_eq.eq_fill = bool(blank)
+            self._preview_eq.update()
+
+    # -- drag and drop (WP3) -------------------------------------------------
+
+    @staticmethod
+    def _dropped_skins(event):
+        mime = event.mimeData()
+        if not mime.hasUrls():
+            return []
+        return [url.toLocalFile() for url in mime.urls()
+                if url.isLocalFile()
+                and url.toLocalFile().lower().endswith(SKIN_EXTS)
+                and os.path.isfile(url.toLocalFile())]
+
+    def dragEnterEvent(self, event):
+        if self._dropped_skins(event):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        self.dragEnterEvent(event)
+
+    def dropEvent(self, event):
+        paths = self._dropped_skins(event)
+        if not paths:
+            event.ignore()
+            return
+        event.acceptProposedAction()
+        if not self._folder or not os.path.isdir(self._folder):
+            self.pick_directory()
+            if not self._folder or not os.path.isdir(self._folder):
+                return
+        added, bad = [], []
+        for path in paths:
+            try:
+                winampskin.load_skin(path)
+            except Exception as exc:            # noqa: BLE001
+                bad.append(f"{os.path.basename(path)}: {exc}")
+                continue
+            target = os.path.join(self._folder, os.path.basename(path))
+            if os.path.exists(target) and filecmp.cmp(path, target, False):
+                pass                    # already there: just pick it
+            elif os.path.abspath(target) != os.path.abspath(path):
+                stem, ext = os.path.splitext(target)
+                count = 2
+                while os.path.exists(target):
+                    target = f"{stem} ({count}){ext}"
+                    count += 1
+                try:
+                    shutil.copyfile(path, target)
+                except OSError as exc:
+                    bad.append(f"{os.path.basename(path)}: {exc}")
+                    continue
+            added.append(target)
+            winampskin._write_log(f"[skin] dropped skin added: {target}")
+        if added:
+            self._current = added[-1]
+            self.reload()
+        if bad:
+            self._show_note("This skin can't be added:\n" + "\n".join(bad))
