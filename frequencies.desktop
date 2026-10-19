@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Frequencies
+GenericName=Internet Radio
+Comment=Listen to internet radio stations
+Exec=Frequencies
+Icon=frequencies
+Categories=AudioVideo;Audio;Player;
+Terminal=false
+StartupNotify=true
+StartupWMClass=Frequencies

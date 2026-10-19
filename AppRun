@@ -1,0 +1,137 @@
+#!/bin/bash
+# AppRun - entry point for the Frequencies AppImage.
+# Sets up a fully self-contained Python + Qt + mpv environment so the
+# app runs the same regardless of what's installed on the host system.
+set -e
+
+HERE="$(cd "$(dirname "$(readlink -f "${0}")")" && pwd)"
+
+# Where the bundled Python lives is discovered, not hardcoded.
+#
+# Debian builds its Python to look in lib/, Fedora builds its own with
+# --with-platlibdir=lib64 and puts the standard library there instead.
+# The interpreter version moves too - 3.12 on Ubuntu 24.04, 3.13 on
+# Fedora 42 - and every one of those used to be written out literally,
+# so a build on the "wrong" distro produced an AppImage that couldn't
+# find its own interpreter. Finding them at startup costs nothing and
+# means one AppRun works for every build host.
+PY_BIN=""
+for candidate in "${HERE}"/usr/bin/python3.*; do
+    if [ -x "${candidate}" ]; then PY_BIN="${candidate}"; break; fi
+done
+
+PY_STDLIB=""
+for libdir in lib64 lib; do
+    for candidate in "${HERE}"/usr/${libdir}/python3.*; do
+        if [ -d "${candidate}" ]; then PY_STDLIB="${candidate}"; break 2; fi
+    done
+done
+
+if [ -z "${PY_BIN}" ] || [ -z "${PY_STDLIB}" ]; then
+    echo "Frequencies: this AppImage is missing its bundled Python." >&2
+    echo "  interpreter: ${PY_BIN:-not found}" >&2
+    echo "  stdlib:      ${PY_STDLIB:-not found}" >&2
+    exit 1
+fi
+
+# PyQt5's own Qt goes FIRST, ahead of our general bundle dir.
+#
+# Belt and braces alongside the skip in bundle_deps.py: PyQt5's Qt is
+# built so libQt5Core re-exports operator new/delete under the Qt_5
+# symbol version, and its plugins are linked expecting that. No distro's
+# Qt5 exports those. If any other copy of libQt5Core.so.5 ever ends up
+# in usr/lib, this ordering means PyQt5's still wins, instead of the app
+# dying with "undefined symbol: _ZdlPvm, version Qt_5".
+QT_LIB_DIR="${PY_STDLIB}/site-packages/PyQt5/Qt5/lib"
+if [ -d "${QT_LIB_DIR}" ]; then
+    export LD_LIBRARY_PATH="${QT_LIB_DIR}:${HERE}/usr/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+else
+    export LD_LIBRARY_PATH="${HERE}/usr/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+fi
+
+# Globbed, not named: libmpv's soname has moved once already (0.35
+# shipped .so.1, 0.36 onwards .so.2) and will move again. Whatever the
+# build host bundled is what we point python-mpv at.
+for candidate in "${HERE}"/usr/lib/libmpv.so.*; do
+    if [ -e "${candidate}" ]; then
+        export STREAMDECK_LIBMPV_PATH="${candidate}"
+        break
+    fi
+done
+
+# Do not let the host system's Qt installation reach into our bundled
+# one. A platform theme or style plugin built against a different Qt
+# build can be loaded into this process and take it down, and the
+# failure looks like an unexplained abort with only Qt frames in it.
+unset QT_PLUGIN_PATH
+unset QT_QPA_PLATFORMTHEME
+unset QT_STYLE_OVERRIDE
+unset QML2_IMPORT_PATH
+unset QT_QPA_PLATFORM_PLUGIN_PATH
+
+export PYTHONHOME="${HERE}/usr"
+export PYTHONPATH="${PY_STDLIB}:${PY_STDLIB}/site-packages${PYTHONPATH:+:${PYTHONPATH}}"
+export PYTHONDONTWRITEBYTECODE=1
+
+# QtWebEngine, for the embedded browser.
+#
+# It is not a normal Qt library: it ships a separate Chromium helper
+# binary and a pile of data files, and it finds none of them by itself
+# once the tree has been moved inside an AppImage. Without these three
+# variables the browser window opens blank with
+# "WebEngineContext used before QtWebEngine::initialize()".
+QTWE_DIR="${PY_STDLIB}/site-packages/PyQt5/Qt5"
+if [ -x "${QTWE_DIR}/libexec/QtWebEngineProcess" ]; then
+    export QTWEBENGINEPROCESS_PATH="${QTWE_DIR}/libexec/QtWebEngineProcess"
+    export QTWEBENGINE_RESOURCES_PATH="${QTWE_DIR}/resources"
+    export QT_WEBENGINE_LOCALES_PATH="${QTWE_DIR}/translations/qtwebengine_locales"
+    # Chromium's own sandbox needs either a setuid helper or user
+    # namespaces, and an AppImage reliably has neither. Qt already runs
+    # inside whatever confinement the desktop applies.
+    export QTWEBENGINE_CHROMIUM_FLAGS="--no-sandbox ${QTWEBENGINE_CHROMIUM_FLAGS}"
+fi
+
+# libmpv aborts if LC_NUMERIC is anything other than "C". The app also
+# forces this from Python (see player.py), but setting it here too means
+# even the earliest startup code runs under a safe locale. Only the
+# numeric category is touched, so dates/text/sorting stay localized.
+export LC_NUMERIC=C
+
+# Qt platform plugin selection.
+#
+# This build bundles the wayland platform plugin (plus its shell-
+# integration, decoration and graphics-integration plugins) alongside
+# xcb, so the app runs as a native Wayland client on a Wayland session
+# instead of going through XWayland.
+#
+# The "wayland;xcb" syntax is a Qt priority list: Qt tries wayland
+# first and silently falls back to xcb if it can't reach a compositor.
+# That covers X11 sessions, XWayland-only setups, and the case where a
+# Wayland session is advertised but not actually connectable.
+PLATFORMS_DIR="${PY_STDLIB}/site-packages/PyQt5/Qt5/plugins/platforms"
+
+if [ -n "${QT_QPA_PLATFORM}" ]; then
+    # The caller picked a platform explicitly - don't second-guess it.
+    :
+elif [ -n "${WAYLAND_DISPLAY}" ] && [ -e "${PLATFORMS_DIR}/libqwayland-generic.so" ]; then
+    export QT_QPA_PLATFORM="wayland;xcb"
+elif [ -n "${DISPLAY}" ]; then
+    export QT_QPA_PLATFORM=xcb
+else
+    # No graphical session at all.
+    export QT_QPA_PLATFORM=offscreen
+fi
+
+# Keep a copy of whatever the app prints. A Qt fatal writes its reason
+# to stderr and then aborts; launched from a desktop icon there is no
+# terminal to catch it, and the core dump alone doesn't say why.
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/frequencies"
+mkdir -p "${LOG_DIR}" 2>/dev/null || true
+
+if [ -w "${LOG_DIR}" ]; then
+    exec "${PY_BIN}" \
+        "${HERE}/usr/share/frequencies/main.py" "$@" 2>&1 \
+        | tee -a "${LOG_DIR}/frequencies-stderr.log"
+else
+    exec "${PY_BIN}" "${HERE}/usr/share/frequencies/main.py" "$@"
+fi

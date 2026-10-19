@@ -1,0 +1,7 @@
+{
+  "_comment": "Corrections shipped with the app. Each key is an artist name in lowercase; each value may set any of: mbid (pins the MusicBrainz artist), wikipedia (forces one article title), bio (replaces the text outright), photo (an image URL).",
+
+  "dracula": {
+    "wikipedia": "Dracula (band)"
+  }
+}
