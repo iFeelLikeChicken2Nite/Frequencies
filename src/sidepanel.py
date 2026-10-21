@@ -26,6 +26,7 @@ from PyQt5.QtWidgets import (QButtonGroup, QHBoxLayout, QLabel, QPushButton,
                              QScrollArea, QSizePolicy, QStackedWidget,
                              QTextBrowser, QToolTip, QVBoxLayout, QWidget)
 
+import devmode
 from nowplaying import LyricsView, rounded
 from shell import icon
 from theme import T
@@ -1232,8 +1233,12 @@ class ArtistView(QScrollArea):
         # Both point at the same artist, so both open the same editor —
         # having to remember which half of the panel accepts a
         # correction would be an arbitrary thing to know.
-        self.bio.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.bio.customContextMenuRequested.connect(self._artist_menu)
+        # Dev builds only: a user build has no menu here at all (task 200).
+        if devmode.is_dev():
+            self.bio.setContextMenuPolicy(Qt.CustomContextMenu)
+            self.bio.customContextMenuRequested.connect(self._artist_menu)
+        else:
+            self.bio.setContextMenuPolicy(Qt.NoContextMenu)
         self.bio.setProperty("role", "body")
         self.bio.setMinimumWidth(180)
         self.bio.setWordWrap(True)
@@ -1432,7 +1437,8 @@ class ArtistView(QScrollArea):
         separate widgets in separate classes, and each holds the handler
         for what it shows rather than reaching into the other.
         """
-        if getattr(self, "_station_locked", False):
+        if not devmode.is_dev() \
+                or getattr(self, "_station_locked", False):
             return          # a talk station's info ships with the app
         menu = panel_menu(self)
         edit = menu.addAction("Edit this artist…")
@@ -1443,6 +1449,8 @@ class ArtistView(QScrollArea):
             self._edit_artist()
 
     def _edit_artist(self):
+        if not devmode.is_dev():
+            return
         from artistedit import ArtistEditDialog
 
         # The artist as identified, not as displayed.
@@ -1584,8 +1592,11 @@ class ArtistHeader(QWidget):
         # Press shots are landscape and the panel shows a band across the
         # top, so the crop it arrives with is frequently the wrong part of
         # the picture — somebody's elbow rather than their face.
-        self.photo.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.photo.customContextMenuRequested.connect(self._photo_menu)
+        if devmode.is_dev():
+            self.photo.setContextMenuPolicy(Qt.CustomContextMenu)
+            self.photo.customContextMenuRequested.connect(self._photo_menu)
+        else:
+            self.photo.setContextMenuPolicy(Qt.NoContextMenu)
 
         # Stands in when there is no photograph.
         self.tower = TowerMark(self)
@@ -1613,7 +1624,8 @@ class ArtistHeader(QWidget):
     def _photo_menu(self, pos):
         """What can be done to the artist's picture."""
         path = getattr(self, "_photo_path", "")
-        if getattr(self, "_station_locked", False):
+        if not devmode.is_dev() \
+                or getattr(self, "_station_locked", False):
             return          # a talk station's info ships with the app
         menu = panel_menu(self)
         crop = menu.addAction("Crop this photo…")
@@ -1640,6 +1652,8 @@ class ArtistHeader(QWidget):
             self._edit_artist()
 
     def _edit_artist(self):
+        if not devmode.is_dev():
+            return
         """Open the correction for whoever is being shown."""
         from artistedit import ArtistEditDialog
 
@@ -1668,7 +1682,8 @@ class ArtistHeader(QWidget):
 
     def _artist_menu(self, pos):
         """Right-clicking the biography offers the same correction."""
-        if getattr(self, "_station_locked", False):
+        if not devmode.is_dev() \
+                or getattr(self, "_station_locked", False):
             return          # a talk station's info ships with the app
         menu = panel_menu(self)
         edit = menu.addAction("Edit this artist…")
@@ -1686,6 +1701,8 @@ class ArtistHeader(QWidget):
         crop starts from all of it and "Undo the crop" brings it back
         (task 76).
         """
+        if not devmode.is_dev():
+            return
         import croptool
         from PyQt5.QtGui import QPixmapCache
 
@@ -1705,6 +1722,8 @@ class ArtistHeader(QWidget):
 
     def _undo_crop(self):
         """The whole photo back, as it was before the first crop."""
+        if not devmode.is_dev():
+            return
         import croptool
         from PyQt5.QtGui import QPixmapCache
 

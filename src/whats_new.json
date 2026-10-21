@@ -1,4 +1,7 @@
 {
+  "138": [
+    "Removed a developer option that was exposed in some context menus."
+  ],
   "137": [
     "Clippy has three new tips: one after you search Radio Browser (how to preview and add a station), one the first time you open a station's settings (the 10-band equalizer switch), and one when you open the Winamp view (the 3-band equalizer's background and the ON button).",
     "On Winamp skins other than FreqAmp, the Lyrics, History, Tags and Visualizer windows now keep the skin's own title bar instead of having FreqAmp names painted over it."
