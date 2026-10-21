@@ -1,4 +1,7 @@
 {
+  "139": [
+    "New installs now start with an updated set of 13 default stations."
+  ],
   "138": [
     "Removed a developer option that was exposed in some context menus."
   ],
