@@ -525,6 +525,9 @@ class StationModel(QAbstractListModel):
         super().__init__(parent)
         self._all = list(stations or [])
         self._rows = list(self._all)
+        # The filter last applied, so a new set of stations is filtered the
+        # same way before the view is told what changed (task 191).
+        self._filter_args = ("", (), ())
 
     def flags(self, index):
         base = Qt.ItemIsEnabled | Qt.ItemIsSelectable
@@ -594,12 +597,19 @@ class StationModel(QAbstractListModel):
         a re-sort, a filter change — still resets, because describing it
         as a series of moves would cost more than it saves.
         """
+        # Compared as the view sees them: the filtered rows, not the whole
+        # library (task 191). With a tag or search on, the new stations were
+        # compared against the few rows showing, which never matched, so every
+        # reload (a down station re-checked every few seconds, a finished
+        # art upgrade) reset the list to everything and then reset it again
+        # to the filter. That was the flicker.
+        wanted = self._filtered(stations, *self._filter_args)
         before = [r.get("id") for r in self._rows]
-        after = [r.get("id") for r in stations]
+        after = [r.get("id") for r in wanted]
+        self._all = list(stations)
 
         if before == after:
-            self._all = list(stations)
-            self._rows = list(self._all)
+            self._rows = wanted
             if self._rows:
                 self.dataChanged.emit(self.index(0, 0),
                                       self.index(len(self._rows) - 1, 0))
@@ -609,8 +619,7 @@ class StationModel(QAbstractListModel):
         if removed is not None:
             start, count = removed
             self.beginRemoveRows(QModelIndex(), start, start + count - 1)
-            self._all = list(stations)
-            self._rows = list(self._all)
+            self._rows = wanted
             self.endRemoveRows()
             self.rows_left.emit()
             return
@@ -619,15 +628,13 @@ class StationModel(QAbstractListModel):
         if added is not None:
             start, count = added
             self.beginInsertRows(QModelIndex(), start, start + count - 1)
-            self._all = list(stations)
-            self._rows = list(self._all)
+            self._rows = wanted
             self.endInsertRows()
             self.rows_arrived.emit(start, count)
             return
 
         self.beginResetModel()
-        self._all = list(stations)
-        self._rows = list(self._all)
+        self._rows = wanted
         self.endResetModel()
         self.refreshed.emit()
 
@@ -648,19 +655,9 @@ class StationModel(QAbstractListModel):
                 return start, count
         return None
 
-    def apply_filter(self, text="", tags=(), exclude=()):
-        """Free text, tags to include, and tags that rule a station out.
-
-        Included tags are ORed: picking 80s and 90s asks for stations
-        tagged either, not both. Two tags almost never appear on the same
-        station, so requiring all of them turned every second selection
-        into an empty list — which is the opposite of what adding a tag
-        looks like it should do.
-
-        Exclusion still ANDs, because it means "not this, and also not
-        that", which is how nobody is surprised by it. Supports tag:name
-        and -tag:name in the text.
-        """
+    @staticmethod
+    def _filtered(stations, text, tags, exclude):
+        """The stations a filter lets through, in their order."""
         text = (text or "").strip().lower()
         tags = set(tags)
         exclude = set(exclude)
@@ -684,7 +681,22 @@ class StationModel(QAbstractListModel):
             hay = " ".join(str(st.get(k) or "")
                            for k in ("name", "location", "codec")).lower()
             return text in hay
+        return [s for s in stations if keep(s)]
 
+    def apply_filter(self, text="", tags=(), exclude=()):
+        """Free text, tags to include, and tags that rule a station out.
+
+        Included tags are ORed: picking 80s and 90s asks for stations
+        tagged either, not both. Two tags almost never appear on the same
+        station, so requiring all of them turned every second selection
+        into an empty list — which is the opposite of what adding a tag
+        looks like it should do.
+
+        Exclusion still ANDs, because it means "not this, and also not
+        that", which is how nobody is surprised by it. Supports tag:name
+        and -tag:name in the text.
+        """
+        self._filter_args = (text, tuple(tags), tuple(exclude))
         # Same result as last time means nothing to tell the view.
         #
         # This ran on every reload — every identified song, every health
@@ -692,7 +704,7 @@ class StationModel(QAbstractListModel):
         # is the blink when a station is removed, and it is also why the
         # per-row arrival never showed: a reset has no idea which rows
         # are new.
-        wanted = [s for s in self._all if keep(s)]
+        wanted = self._filtered(self._all, text, tags, exclude)
         if [r.get("id") for r in wanted] == [r.get("id") for r in self._rows]:
             self._rows = wanted
             if self._rows:

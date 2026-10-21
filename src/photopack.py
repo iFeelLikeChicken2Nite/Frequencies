@@ -111,10 +111,11 @@ def pack_address():
     return _address("pack")
 
 
-def save_addresses(pack=None, reports=None):
-    """From Settings (dev builds). None leaves a field as it is."""
+def save_addresses(pack=None, reports=None, art=None):
+    """From Settings (dev builds). None leaves a field as it is. art: the
+    picture service for QR codes (build 128, artlink.py)."""
     data = _read(dev_address_path())
-    for name, value in (("pack", pack), ("reports", reports)):
+    for name, value in (("pack", pack), ("reports", reports), ("art", art)):
         if value is None:
             continue
         value = value.strip()
@@ -178,6 +179,82 @@ def artist_entry(key):
         else:
             entry.pop("photo", None)
     return entry
+
+
+def pack_names():
+    """The pack's artist entries by lowercase name ({} with no pack)."""
+    return _index()
+
+
+def bio_names():
+    """The developer's bio fixes by lowercase name."""
+    return _bios()["artists"]
+
+
+_explained = set()
+
+
+def explain_photo(settings, artist, shown_photo=""):
+    """One "[photos]" line per artist a session (task 190): which pack
+    photo a credit got when it isn't the exact name, or why it got none.
+    `shown_photo` is the file the panel is about to show (or "")."""
+    import storage
+    artist = " ".join((artist or "").split())
+    if not artist or artist.lower() in _explained:
+        return
+    _explained.add(artist.lower())
+    key, how = storage.find_artist(_index(), artist)
+    entry = artist_entry(key) if key else {}
+    own_key, _own_how = storage.find_artist(storage.load_artist_overrides(),
+                                            artist)
+    own = (storage.load_artist_overrides().get(own_key) or {}).get("photo")
+    # Corrections copied from another computer, or a deleted file
+    # (task 194): it used to hide the pack's photo without a word.
+    lost = own if storage.missing_photo(own) else ""
+    if lost:
+        own = ""
+        lost = (f"your correction's photo isn't on this computer "
+                f"({lost})")
+    import devmode
+    if entry.get("photo"):
+        if lost:
+            _photos(f"'{artist}': {lost}; the pack's photo is shown instead")
+        elif how:
+            _photos(f"'{artist}': the pack's photo of '{key}' ({how})")
+        return
+    if own:
+        if devmode.is_dev() and installed():
+            _photos(f"'{artist}': your own photo is shown; the photo pack on "
+                    f"this computer (made {installed().get('made') or '?'}) "
+                    f"has none for it - Publish my photos so users get it")
+        return
+    if not pack_address():
+        why = "this build has no photo pack address"
+    elif not (settings or {}).get(SETTING):
+        why = "the photo pack is off (Settings > Lyrics and artists)"
+    elif not installed():
+        why = "the photo pack isn't downloaded yet"
+    elif key:
+        why = (f"the pack lists '{key}' but its photo file is missing "
+               f"(made {installed().get('made') or '?'})")
+    else:
+        have = installed()
+        why = (f"not in the photo pack (made {have.get('made') or '?'}, "
+               f"{have.get('artists', 0)} artists)")
+    _photos(f"'{artist}': no pack photo - {why}"
+            + (f"; {lost}" if lost else "")
+            + ("; a found photo is shown instead" if shown_photo else "")
+            # The dev build: a found photo isn't one of yours (task 194).
+            + ("; no photo of yours for it here either (Edit this "
+               "artist… > Choose…)" if devmode.is_dev() else ""))
+
+
+def _photos(text):
+    try:
+        import crashlog
+        crashlog.write("[photos] " + text)
+    except Exception:                           # noqa: BLE001
+        pass
 
 
 def talk_photo(base):
@@ -452,6 +529,85 @@ class PackUpdate(Job):
         info = _unpack(part, folder, manifest)
         os.remove(part)
         return "updated", _summary(info)
+
+
+class ManifestFetch(Job):
+    """Read the published photo-pack.json (a few hundred bytes), for the
+    dev build's count next to Publish my photos (task 194).
+    done(manifest or None, why)."""
+
+    done = pyqtSignal(object, str)
+
+    def __init__(self, address, parent=None):
+        super().__init__(parent)
+        self.address = address
+
+    def work(self):
+        try:
+            import requests
+            answer = requests.get(self.address, timeout=20,
+                                  headers={"User-Agent": AGENT})
+            if answer.status_code == 404:
+                self.send(self.done, {}, "")
+                return
+            answer.raise_for_status()
+            manifest = answer.json()
+            if not isinstance(manifest, dict) or not manifest.get("sha256"):
+                raise ValueError("not a pack")
+        except Exception as exc:                # noqa: BLE001
+            self.send(self.done, None, _why(exc))
+            return
+        self.send(self.done, manifest, "")
+
+
+def photo_count(manifest=None, why=""):
+    """"N artists have photos here, the pack has M", and which of yours
+    aren't published yet (task 194). `manifest` is the published
+    photo-pack.json ({} when none is published, None when it couldn't be
+    read: `why`)."""
+    import storage
+    dev = storage.load_artist_overrides()
+    here, lost = {}, set()
+    for key, entry in dev.items():
+        photo = entry.get("photo")
+        if not isinstance(photo, str) or not photo.strip():
+            continue
+        if storage.missing_photo(photo):
+            lost.add(key)
+        else:
+            here[key] = (entry.get("name") or key).strip()
+    line = (f"{len(here)} artist{'' if len(here) == 1 else 's'} "
+            f"{'has a photo' if len(here) == 1 else 'have photos'} here")
+    if lost:
+        line += f" ({len(lost)} more whose photo file is missing)"
+    if manifest is None:
+        return line + (f"; couldn't check the published pack ({why})."
+                       if why else ".")
+    if not manifest:
+        return line + "; no photo pack is published yet."
+    line += (f", the published pack has {manifest.get('artists', '?')} "
+             f"(made {manifest.get('made') or '?'}).")
+    names = manifest.get("names")
+    if not isinstance(names, list):
+        # Packs from before build 135 don't list their artists; the copy
+        # downloaded on this computer does, when it's the same pack.
+        if installed().get("sha256") != manifest.get("sha256"):
+            return line + (" Publish my photos once to see which of "
+                           "yours are new.")
+        names = list(pack_names())
+    published = {str(n).strip().lower() for n in names}
+    new = sorted(here[k] for k in here if k not in published)
+    gone = len(published - set(here) - lost)
+    if new:
+        shown = ", ".join(new[:8]) + (f" and {len(new) - 8} more"
+                                      if len(new) > 8 else "")
+        line += f" Not published yet: {shown}."
+    else:
+        line += " All of yours are published."
+    if gone:
+        line += (f" {gone} in the pack aren't in your corrections here, "
+                 f"so publishing from here would take them out.")
+    return line
 
 
 def _decode_base32_chunks(chunks):

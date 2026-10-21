@@ -63,17 +63,29 @@ class HelpPage(QScrollArea):
         head.setProperty("role", "display")
         lay.addWidget(head)
 
+        self._cards = []
         for title, text in HELP:
-            lay.addWidget(self._card(title, text))
+            card = self._card(title, text)
+            self._cards.append(card)
+            lay.addWidget(card)
         lay.addStretch(1)
         self.setWidget(body)
+
+    @staticmethod
+    def _card_sheet():
+        return f"background: {T['bg1']}; border-radius: 10px;"
+
+    def restyle(self):
+        """A new theme (build 130): the cards took their color when they
+        were made, so they are given it again."""
+        for card in self._cards:
+            card.setStyleSheet(self._card_sheet())
 
     @staticmethod
     def _card(title, text):
         card = QWidget()
         card.setAttribute(Qt.WA_StyledBackground, True)
-        card.setStyleSheet(
-            f"background: {T['bg1']}; border-radius: 10px;")
+        card.setStyleSheet(HelpPage._card_sheet())
         lay = QVBoxLayout(card)
         lay.setContentsMargins(18, 14, 18, 16)
         lay.setSpacing(6)

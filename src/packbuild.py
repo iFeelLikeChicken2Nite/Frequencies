@@ -130,7 +130,10 @@ def photo_pack(dev, talk_photos, warn=print):
                 "sha256": hashlib.sha256(data).hexdigest(),
                 "made": time.strftime("%Y-%m-%d"),
                 "photos": photos, "talk_photos": talk,
-                "artists": len(artists)}
+                "artists": len(artists),
+                # Which ones, for the dev build's "not published yet"
+                # (task 194).
+                "names": sorted(artists)}
     return data, manifest
 
 

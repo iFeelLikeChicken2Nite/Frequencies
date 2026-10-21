@@ -1396,6 +1396,12 @@ class StationOptionsDialog(QDialog):
                 "That image couldn't be saved — it did not come back as a "
                 "picture. Try a different one.")
         if path:
+            # Where it came from, before the crop can change it: a QR
+            # code carries this address while the file is unchanged
+            # (build 128, storage.art_link).
+            if url.startswith(("http://", "https://")):
+                import storage
+                self._art_link = (path, url, storage._file_sha(path))
             self.custom_art.setText(path)
             self._offer_crop(path)
             # The same path as before doesn't count as a change of text.
@@ -1411,6 +1417,16 @@ class StationOptionsDialog(QDialog):
                 self, "Find art",
                 "That image couldn't be downloaded. Try another one."
             )
+
+    def _art_link_values(self):
+        """art_url for a picture Find just downloaded (build 128); a
+        file chosen any other way keeps the station's own, which
+        storage.art_link only trusts while the file is unchanged."""
+        link = getattr(self, "_art_link", None)
+        if link and link[0] == self.custom_art.text().strip():
+            return {"art_url": link[1], "art_url_sha": link[2],
+                    "art_from_code": False}
+        return {}
 
     def _browse_art(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -1449,6 +1465,7 @@ class StationOptionsDialog(QDialog):
             "url": self.url_field.text().strip() or self._station.get("url"),
             "art_source": self.art_source.currentData(),
             "custom_art_path": self.custom_art.text().strip(),
+            **self._art_link_values(),
             "art_fallback": self.art_fallback.isChecked(),
             "readout_source": self.readout_source.currentData(),
             # The name itself is kept as "empty", so a rename is followed.

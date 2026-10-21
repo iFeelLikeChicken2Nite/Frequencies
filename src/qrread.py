@@ -64,17 +64,27 @@ def read_code(path):
 
     image = _load(path)
 
-    # Qt images have to become raw bytes for the decoder.
+    # A Qt image (no PIL here, as in the Windows build). zxing-cpp 2.x+
+    # takes a buffer shaped (height, width) of gray bytes; older ones took
+    # raw bytes, width, height and the row length. Build 126: on Windows
+    # every QR picture failed with "could not read", because only the old
+    # call was tried and the bundled zxing-cpp is 3.x.
     if not hasattr(image, "size") or not hasattr(image, "convert"):
         from PyQt5.QtGui import QImage
-        image = image.convertToFormat(QImage.Format_RGB888)
+        image = image.convertToFormat(QImage.Format_Grayscale8)
         width, height = image.width(), image.height()
-        raw = bytes(image.constBits().asstring(image.byteCount()))
+        stride = image.bytesPerLine()
+        padded = bytes(image.constBits().asstring(stride * height))
+        raw = b"".join(padded[y * stride:y * stride + width]
+                       for y in range(height))
         try:
-            results = zxingcpp.read_barcodes(raw, width, height,
-                                             image.bytesPerLine())
+            results = zxingcpp.read_barcodes(
+                memoryview(raw).cast("B", (height, width)))
         except TypeError:
-            raise QRError("The decoder could not read that image.")
+            try:
+                results = zxingcpp.read_barcodes(raw, width, height, width)
+            except TypeError:
+                raise QRError("The decoder could not read that image.")
     else:
         results = zxingcpp.read_barcodes(image)
 

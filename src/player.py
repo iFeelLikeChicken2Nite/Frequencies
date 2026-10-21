@@ -777,6 +777,7 @@ class CaptureCancel:
         self._lock = threading.Lock()
         self._encoder = None
         self.cancelled = False
+        self.timed_out = False
 
     def attach(self, encoder):
         """The capture has started. False if it was cancelled already."""
@@ -800,6 +801,25 @@ class CaptureCancel:
                     encoder.stop()      # ends playback: the wait returns
                 except Exception:       # noqa: BLE001
                     pass
+
+    def time_out(self):
+        """The recording ran past CAPTURE_LIMIT: stop it, not as a quit."""
+        with self._lock:
+            if self.cancelled or self._encoder is None:
+                return
+            self.timed_out = True
+            try:
+                self._encoder.stop()
+            except Exception:           # noqa: BLE001
+                pass
+
+
+# Seconds a recording may take beyond its own length (task 192). A station
+# that sends its sound slower than it plays (a trickle, a stuck HLS
+# playlist) never gave mpv the 6 s it waited for, so the recording never
+# ended, and song ID runs one at a time: no song was named again until a
+# restart.
+CAPTURE_LIMIT = 20
 
 
 def capture_stream_to_wav(url, seconds=6, out_path=None, start_seconds=None,
@@ -829,7 +849,10 @@ def capture_stream_to_wav(url, seconds=6, out_path=None, start_seconds=None,
     url = playlists.resolve_stream_url(url)
 
     force_c_numeric_locale()
+    if cancel is None:
+        cancel = CaptureCancel()        # the time limit stops it through this
     encoder = None
+    limit = None
     try:
         encoder = mpv.MPV(
             vid="no",
@@ -857,25 +880,32 @@ def capture_stream_to_wav(url, seconds=6, out_path=None, start_seconds=None,
         )
         encoder.play(url)
         # Attached after play(): a stop sent before play() would be lost.
-        if cancel is not None and not cancel.attach(encoder):
+        if not cancel.attach(encoder):
             raise RuntimeError("cancelled")
+        limit = threading.Timer(seconds + CAPTURE_LIMIT, cancel.time_out)
+        limit.daemon = True
+        limit.start()
         encoder.wait_for_playback()
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(f"Couldn't capture audio: {exc}") from exc
     finally:
-        if cancel is not None:
-            cancel.detach()             # before terminate, under its lock
+        if limit is not None:
+            limit.cancel()
+        cancel.detach()                 # before terminate, under its lock
         if encoder is not None:
             try:
                 encoder.terminate()
             except Exception:
                 pass
 
-    if cancel is not None and cancel.cancelled:
+    if cancel.cancelled or cancel.timed_out:
         try:
             os.remove(out_path)
         except OSError:
             pass
+        if cancel.timed_out:
+            raise RuntimeError("The station sent its sound too slowly to "
+                               "recognize the song.")
         raise RuntimeError("Capture canceled.")
 
     if not os.path.exists(out_path) or os.path.getsize(out_path) < 4096:

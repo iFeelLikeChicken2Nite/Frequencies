@@ -2129,6 +2129,24 @@ class Sidebar(QWidget):
         # already the final one — otherwise the first paint is measured
         # against a width that changes a moment later.
         self._fit_tag_holder()
+        # Same tags in the same order: update the pills in place (task 191).
+        #
+        # Every reload (a down station re-checked, an art upgrade) sends the
+        # tag list again, and rebuilding the pills each time made them blink
+        # and re-measured their text against an unstyled font, so a long tag
+        # flipped between its full name and "…". A pill only changes when its
+        # color or count does.
+        if [b.tag_name for b in self._tag_buttons] == [t[0] for t in tags]:
+            for b, (name, colour, count) in zip(self._tag_buttons, tags):
+                if b.tag_colour == colour and b.tag_count == count:
+                    continue
+                b.tag_colour = colour
+                b.tag_count = count
+                b.full_label = f"{name}   {count}"
+                self._paint_tag(b)
+            self._tag_data = list(tags)
+            self._elide_tags()
+            return
         # Hidden on purpose before they leave. A pill put in the layout
         # gets a queued "show me" from Qt; if the pills are rebuilt again
         # before that runs (two reloads in one go, as after the Twitch live
@@ -2233,7 +2251,9 @@ class Sidebar(QWidget):
             f"QPushButton[pill='true'] {{ background: {bg}; color: {fg};"
             f" text-align: left; padding: 3px 10px; }}"
             f"QPushButton[pill='true']:hover {{ background: {hover}; }}")
-        b.setText(f"{name}   {count}")
+        # Not b.setText(full label): that undid the elision on every click
+        # or reload until the next resize put it back (task 191).
+        self._elide_pill(b, self._pill_room())
 
     # -- collapse ----------------------------------------------------------
 
@@ -2425,23 +2445,45 @@ class Sidebar(QWidget):
             self._elide_timer = timer
         timer.start()
 
-    def _elide_tags(self):
-        """Trim each pill's text to the width it actually has."""
-        # Measured from the scroll area, not its viewport.
-        #
-        # The viewport shrinks when the scrollbar appears, so the pills
-        # were elided harder the moment the list got long — the same tag
-        # readable with nine tags and cut off with ten. The margin
-        # already reserves the bar's width, so the outer width is the
-        # honest number and it does not change.
+    PILL_PAD = 20               # the pill's 10 px of padding on each side
+
+    def _pill_room(self):
+        """The width a pill has for its text.
+
+        Measured from the scroll area, not its viewport.
+
+        The viewport shrinks when the scrollbar appears, so the pills
+        were elided harder the moment the list got long — the same tag
+        readable with nine tags and cut off with ten. The margin
+        already reserves the bar's width, so the outer width is the
+        honest number and it does not change.
+        """
         room = max(40, self._tag_scroll.width() - self.TAG_BAR_ROOM
                    - self._tag_box.contentsMargins().left()
                    - self._tag_box.contentsMargins().right())
+        return room - self.PILL_PAD
+
+    def _elide_pill(self, button, room):
+        """Show a pill's name, cut with "…" only when it does not fit."""
+        timer = getattr(button, "_scroll_timer", None)
+        if timer is not None and timer.isActive():
+            return                      # being read: the hover scroll owns it
+        label = getattr(button, "full_label", button.text())
+        # Measured in the font the pill is drawn in. A new pill has not met
+        # the stylesheet yet (11 px for pills), so its own font() was the
+        # app's larger one and a tag that fits was cut off; the next resize
+        # measured it properly and gave it back. That was the "…" that came
+        # and went (task 191).
+        button.ensurePolished()
+        text = button.fontMetrics().elidedText(label, Qt.ElideRight, room)
+        if text != button.text():
+            button.setText(text)
+
+    def _elide_tags(self):
+        """Trim each pill's text to the width it actually has."""
+        room = self._pill_room()
         for button in getattr(self, "_tag_buttons", []):
-            label = getattr(button, "full_label", button.text())
-            metrics = QFontMetrics(button.font())
-            button.setText(metrics.elidedText(label, Qt.ElideRight,
-                                              room - 18))
+            self._elide_pill(button, room)
 
     def resizeEvent(self, e):
         super().resizeEvent(e)

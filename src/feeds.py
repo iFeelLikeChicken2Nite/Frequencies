@@ -61,6 +61,14 @@ def _talk_log(text):
         pass
 
 
+def _songid_log(text):
+    try:
+        import crashlog
+        crashlog.write("[songid] " + text)
+    except Exception:                           # noqa: BLE001
+        pass
+
+
 def _artist_log(text):
     try:
         import crashlog
@@ -352,6 +360,9 @@ class Feeds(QObject):
         self._track = None
         self._track_key = None
         self._shazam_worker = None
+        self._shazam_started = 0.0
+        self._shazam_fails = 0
+        self._shazam_last_fail = ""
         self._lyrics_worker = None
         self._artist_worker = None
         self._artist_shown = ""
@@ -417,6 +428,12 @@ class Feeds(QObject):
         """
         same = bool(station) and station.get("id") == self._station_id
         self._shazam_timer.stop()
+        if not same:
+            # The last station's song check is no use now; stop it, so
+            # the new station's first check isn't skipped behind it.
+            self._drop_shazam_worker()
+            self._shazam_fails = 0
+            self._shazam_last_fail = ""
         self._track = None
         self._track_key = None
         self._artist_shown = ""
@@ -469,12 +486,31 @@ class Feeds(QObject):
 
     # -- identification ----------------------------------------------------
 
+    # A song check (6 s recording, fingerprint, Shazam's answer) that is
+    # still going after this long is stuck: let it go, start a new one.
+    # The recording has its own limit (player.CAPTURE_LIMIT); this is for
+    # anything else that never comes back (task 192).
+    SHAZAM_STUCK_SECONDS = 60
+
+    def _drop_shazam_worker(self):
+        worker, self._shazam_worker = self._shazam_worker, None
+        if worker is not None and worker.isRunning():
+            worker.stop()               # its answer, if any, is ignored
+
     def run_shazam(self):
         station = self.lib.station_by_id(self._station_id)
         if station is None:
             return
         if self._shazam_worker is not None and self._shazam_worker.isRunning():
-            return                      # one at a time
+            waited = time.monotonic() - self._shazam_started
+            if waited < self.SHAZAM_STUCK_SECONDS:
+                return                  # one at a time
+            # One check that never ended used to stop song ID until the
+            # app was restarted (task 192).
+            _songid_log(f"'{storage.station_display_name(station)}': the "
+                        f"last song check has been stuck for {waited:.0f} s; "
+                        f"letting it go and starting a new one")
+            self._drop_shazam_worker()
 
         source = self.player.current_source() or station.get("url")
         # How far behind the live edge you are hearing.
@@ -496,11 +532,18 @@ class Feeds(QObject):
         worker.no_match.connect(self._on_no_match)
         worker.failed.connect(self._on_failed)
         self._shazam_worker = worker
+        self._shazam_started = time.monotonic()
         worker.start()
 
     def _on_identified(self, station_id, track):
         if not self._is_current(station_id):
             return
+        if self._shazam_fails:
+            _songid_log(f"song checks working again after "
+                        f"{self._shazam_fails} that failed: "
+                        f"{track.get('artist', '')} - {track.get('title', '')}")
+            self._shazam_fails = 0
+            self._shazam_last_fail = ""
         station = self.lib.station_by_id(station_id)
         if self._named and not track.get("cover_url"):
             # Shazam knew the song but had no sleeve: keep the one the
@@ -551,9 +594,17 @@ class Feeds(QObject):
         """A failure is not a miss, and swallowing it made a broken
         fingerprinter look exactly like a station nobody has ever heard
         of. Say which it was."""
-        if self._is_current(station_id):
-            self._track = dict(self._named) if self._named else None
-            self.refresh_artwork()
+        if not self._is_current(station_id):
+            return                      # an old station's: say nothing
+        self._track = dict(self._named) if self._named else None
+        self.refresh_artwork()
+        self._shazam_fails += 1
+        if message != self._shazam_last_fail:
+            # Once per kind of failure, not every 30 s.
+            self._shazam_last_fail = message
+            station = self.lib.station_by_id(station_id) or {}
+            _songid_log(f"'{storage.station_display_name(station)}': song "
+                        f"check failed: {message}")
         self.win.notify(f"Song identification: {message}")
 
     # -- lyrics ------------------------------------------------------------
@@ -1063,6 +1114,11 @@ class Feeds(QObject):
         chosen = (written.get("photo") or "").strip()
         photo = (chosen if chosen and os.path.exists(chosen)
                  else info.get("photo_path") or None)
+        try:
+            import photopack
+            photopack.explain_photo(self.lib.settings, artist, photo or "")
+        except Exception:                       # noqa: BLE001
+            pass
 
         self.win._artist_key = artist
         self.win.on_artist(

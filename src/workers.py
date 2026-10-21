@@ -455,9 +455,15 @@ class LyricsWorker(Job):
             # Anything lyrics.py didn't already phrase for a human.
             # Still keep it short: the panel is two lines of text, not a
             # place for a stack trace.
+            try:
+                import crashlog
+                crashlog.write(f"[lyrics] lookup crashed: {exc!r}")
+            except Exception:  # noqa: BLE001
+                pass
             self.send(
                 self.failed, self.station_id, self.track_key,
-                f"Couldn't fetch lyrics ({type(exc).__name__}).",
+                "The lyrics service is busy right now. "
+                "Try again in a little while.",
             )
             return
         if result:

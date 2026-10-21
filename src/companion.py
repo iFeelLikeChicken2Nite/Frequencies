@@ -60,6 +60,12 @@ TIPS = {
     "search": ("1.5", "Try clicking the Search button, the big button with "
                       "the magnifying glass, and searching \"electro\"!",
                "beside"),
+    # Asked 2026-10-21 (task 196): Search was clicked while 1.5 showed; he
+    # stays and says what the results list does.
+    "results": ("1.75", "Double-clicking a station here just plays it, so "
+                        "you can preview it. To add it, click the plus, or "
+                        "right-click it and choose \"Add to my stations\".",
+                "inside"),
     "added": ("2", "Nice pick! It's in Saved Frequencies now. Double-click "
                    "it to tune in, or right-click it for tags, sharing and "
                    "more.", "beside"),
@@ -135,6 +141,19 @@ TIPS = {
     "art": ("14", "Frequencies can find the right station art for this "
                   "frequency! Open its station settings and click \"Find\" "
                   "on the Display tab.", "row"),
+    # Asked 2026-10-21 (task 197): the first time a station's settings open.
+    "stationeq": ("15", "If you'd like, you can switch to a normal 10-band "
+                        "equalizer in the app's main Settings, under Sound "
+                        "(Ten-band equalizer).", "dialog"),
+    # Asked 2026-10-21 (task 198): the Winamp view opens with nothing else
+    # showing.
+    "winampeq": ("16", "Good to know: the 3-band equalizer can hide its "
+                       "background in Winamp skins to make it look right, "
+                       "and you can turn that on or off per skin with "
+                       "\"Blank EQ\" in the Skins window. You can also "
+                       "quick-switch between the 10-band and 3-band "
+                       "equalizer by toggling the \"ON\" button in the EQ "
+                       "window.", "winamp"),
     # Asked 2026-10-19 (task 155): the first time lyrics are found.
     "lyrics": ("13", "If the lyrics are ever out of sync, double-click the "
                      "current lyric line to sync them up again.", "inside"),
@@ -392,6 +411,7 @@ class Companion:
         self.open_s = int(settings.get(OPEN_SETTING) or 0)
         self.share_at = SHARE_AT + random.randint(0, 180)
         self.float = _Float()
+        self.dialog = None              # the station settings window, if open
         self.sprite = Sprite(window, self)
         self.sprite.hide()
         self.bubble = Bubble(window, self)
@@ -420,6 +440,39 @@ class Companion:
             self.wanted.remove(tip_id)
         self.wanted.append(tip_id)
         self.update()
+
+    def tip_if_idle(self, tip_id, target=None):
+        """Ask for a tip only if no other tip is showing right now (task
+        198); otherwise it waits for the next time its place opens."""
+        if not self.ok or tip_id in self.closed():
+            return
+        self.update()
+        if self.current is None:
+            self.tip(tip_id, target)
+
+    def open_dialog(self, dialog):
+        """Tips with the "dialog" place stand in this window while it is
+        open (task 197); it hands him back when it closes."""
+        self.dialog = dialog
+        dialog.finished.connect(lambda _r: self.close_dialog(dialog))
+
+    def close_dialog(self, dialog):
+        if self.dialog is not dialog:
+            return
+        self.dialog = None
+        self._hide()
+        for part in (self.sprite, self.bubble):
+            if part.parentWidget() is not self.window:
+                part.setParent(self.window)
+                part.hide()
+        self.update()
+
+    def _area(self):
+        """The rectangle he stands in: the window, or the open dialog."""
+        if self.current is not None and TIPS[self.current][2] == "dialog" \
+                and self.dialog is not None:
+            return self.dialog.rect()
+        return self.window.rect()
 
     def reset(self):
         """Settings > "Reset Clippy's hot tips": every tip again, from 1."""
@@ -490,6 +543,10 @@ class Companion:
         screen now."""
         if TIPS[tip_id][2] == "winamp":
             return QRect() if self._winamp_open() else None
+        if TIPS[tip_id][2] == "dialog":
+            if self.dialog is None or not self.dialog.isVisible():
+                return None
+            return self.dialog.rect()
         if not self.window.isVisible():
             return None
         if TIPS[tip_id][2] == "center":
@@ -540,7 +597,9 @@ class Companion:
     def _show(self, tip_id, place):
         self.current = tip_id
         crashlog.write(f"[companion] tip {tip_id!r} ({TIPS[tip_id][0]})")
-        host = self.float if TIPS[tip_id][2] == "winamp" else self.window
+        mode = TIPS[tip_id][2]
+        host = (self.float if mode == "winamp"
+                else self.dialog if mode == "dialog" else self.window)
         for part in (self.sprite, self.bubble):
             if part.parentWidget() is not host:
                 part.setParent(host)
@@ -637,6 +696,25 @@ class Companion:
         self.bubble.hide()
         self.sprite.play("GoodBye", self._gone)
 
+    def move_on(self, tip_id, next_id):
+        """The user did what the showing tip told them to (build 131,
+        task 186): it closes for good with no leave animation, and the
+        next tip follows at once instead of after the usual quiet gap.
+        Does nothing unless `tip_id` is the one showing and, for a tip
+        with a Yes/No, answered."""
+        if self.current != tip_id or tip_id in self.closed():
+            return
+        if tip_id in ASKS and tip_id not in self.answered:
+            return
+        self.settings[SETTING] = sorted(self.closed() | {tip_id})
+        self.save()
+        crashlog.write(f"[companion] tip {tip_id!r} followed; "
+                       f"{next_id!r} next, no goodbye")
+        if tip_id in self.wanted:
+            self.wanted.remove(tip_id)
+        self._hide()
+        self.tip(next_id)
+
     def done(self, tip_id):
         """The user did what the tip says: it never needs to show."""
         if tip_id in self.closed():
@@ -676,7 +754,7 @@ class Companion:
             self.float.move(was + (at - start))
             return
         pos = was + (at - start)
-        win = self.window.rect()
+        win = self._area()
         pos.setX(max(0, min(win.right() - FRAME_W, pos.x())))
         pos.setY(max(0, min(win.bottom() - FRAME_H, pos.y())))
         self.moved[self.current] = pos
@@ -699,7 +777,7 @@ class Companion:
         if mode == "winamp":
             self._put_float()
             return
-        win = self.window.rect()
+        win = self._area()
         sw, sh = FRAME_W, FRAME_H
         if self.current in self.moved:
             pos = self.moved[self.current]
@@ -710,6 +788,8 @@ class Companion:
             return
         if mode in ("center", "middle"):
             x, y = r.center().x() - sw // 2, r.center().y() - sh // 2 + 40
+        elif mode == "dialog":
+            x, y = win.left() + 12, win.bottom() - sh + 4
         elif mode == "inside":
             x, y = r.right() - sw - 24, r.bottom() - sh - 16
         elif mode == "row":
@@ -730,7 +810,7 @@ class Companion:
     def _bubble_by(self, at, r, may_cover):
         """The bubble over his head, unless that would cover what he is
         pointing at (or run off the top): then beside him, or below."""
-        win = self.window.rect()
+        win = self._area()
         x, y = at.x(), at.y()
         sw, sh = FRAME_W, FRAME_H
         self.bubble.set_tail("down", 0)

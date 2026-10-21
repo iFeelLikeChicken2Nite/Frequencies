@@ -1,0 +1,48 @@
+{
+  "137": [
+    "Clippy has three new tips: one after you search Radio Browser (how to preview and add a station), one the first time you open a station's settings (the 10-band equalizer switch), and one when you open the Winamp view (the 3-band equalizer's background and the ON button).",
+    "On Winamp skins other than FreqAmp, the Lyrics, History, Tags and Visualizer windows now keep the skin's own title bar instead of having FreqAmp names painted over it."
+  ],
+  "136": [
+    "The Linux AppImage now follows the AppImage distribution guide: it carries AppStream information so app stores and AppImage tools can show what Frequencies is, and it includes the license text and source links for everything inside it."
+  ],
+  "135": [
+    "Artist photos from the photo pack now show even when your corrections came from another computer, for example after restoring a backup.",
+    "Backups no longer carry artist photos: the photo pack brings them, and restoring a backup keeps the photos you chose on this computer."
+  ],
+  "134": [
+    "Songs on regular stream frequencies are recognized again, with their lyrics and artist info, after the app has been open a while. One station sending its sound too slowly could stop it until you restarted the app."
+  ],
+  "133": [
+    "The Saved Frequencies list no longer blinks every few seconds while a tag or a search is on, and a long tag name only shows \"…\" when it really does not fit."
+  ],
+  "132": [
+    "Artist photos from the photo pack now show for songs credited with guests or a different spelling, like \"Eminem feat. Dido\", \"Eminem & Rihanna\" or \"The Barenaked Ladies\"."
+  ],
+  "131": [
+    "Clippy moves straight on to his next tip when you open Add Frequency… as he suggested.",
+    "iBroadcast and YouTube frequencies are no longer marked down right after launch.",
+    "Lyrics retry quietly when the service is busy, and show a plain message instead of a raw error.",
+    "On Ubuntu and other Linux desktops the taskbar now shows the Frequencies icon instead of a gear."
+  ],
+  "130": [
+    "22 themes to choose from in Settings > Appearance > Theme, 20 of them new: Midnight, Deep Sea, Velvet, Cassette, Patina, Cobalt, Ember, Amber CRT, Grape Soda, Blueprint, Steam Classic, Aubergine, Outrun, Tron, Commodore 64, DMG, Rose, Oxford Rajah, Imperial Aqua and Teletext. The old Midnight is now called OG and Paper is now called Flashbang. Graphite, Oxide and Cathode are gone; if you used one you are back on OG."
+  ],
+  "129": [
+    "Frequencies now runs on the Steam Deck and on older Linux systems such as Ubuntu 22.04: the AppImage carries the parts of Linux it needs instead of asking for a newer system."
+  ],
+  "128": [
+    "QR codes now carry a link to the station's full-size picture, so the frequency arrives with its sharp picture instead of a small copy.",
+    "Sharing a frequency whose picture you chose from your own files uploads that picture so the code can link to it."
+  ],
+  "127": [
+    "New installs start with a fresh set of 13 frequencies, each with its full-size picture."
+  ],
+  "126": [
+    "Frequencies you add from a QR code, a station code or a share zip now get their full-size picture: the app finds that same picture online and swaps out the small copy the code carried.",
+    "If no matching picture turns up, the small copy stays, and a picture you choose yourself is never replaced."
+  ],
+  "125": [
+    "Frequencies keeps itself up to date: a new build downloads in the background and is put in place when you close the app."
+  ]
+}

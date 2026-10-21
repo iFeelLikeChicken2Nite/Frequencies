@@ -993,6 +993,11 @@ class WinampSkin:
         rect = PLAYLIST_SPRITES.get(name)
         return self._sprite("pledit.bmp", rect) if rect else None
 
+    def is_own(self):
+        """Is this the Frequencies skin (FreqAmp)?"""
+        return (os.path.basename(self.path).lower()
+                == OWN_SKIN.lower())
+
     def playlist_title(self, label=None, active=True):
         """The playlist's title plate, lit or not, optionally renamed.
 
@@ -1003,6 +1008,11 @@ class WinampSkin:
         plate = (self.playlist("title_bar_selected" if active
                                else "title_bar")
                  or self.playlist("title_bar"))
+        # Only FreqAmp gets its own names on the plate (task 199): on any
+        # other skin the Lyrics, History, Tags and Visualizer windows
+        # keep that skin's own title bar, untouched.
+        if not self.is_own():
+            return plate
         if plate is None or not label:
             return plate
         key = (label, bool(active))

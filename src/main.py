@@ -100,6 +100,20 @@ def windows_dll_folders():
                 pass
 
 
+def hold_running_mutex():
+    """Windows (build 125): every Frequencies.exe holds this named mutex
+    while it runs, so an update's installer can wait for all of them,
+    the browser helper too, to end (frequencies.iss, /UPDATE)."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        hold_running_mutex.handle = ctypes.windll.kernel32.CreateMutexW(
+            None, False, "FrequenciesRunning")
+    except (AttributeError, OSError):
+        pass
+
+
 def missing_library_window(error):
     """A plain window naming the missing library and its package."""
     import re
@@ -151,11 +165,26 @@ def main():
 
     if sys.platform == "win32":
         windows_dll_folders()
+        hold_running_mutex()
 
+    if sys.platform.startswith("linux"):
+        # X11: WM_CLASS is ("frequencies", "Frequencies"), matching the
+        # launcher entry's StartupWMClass (task 189).
+        os.environ.setdefault("RESOURCE_NAME", "frequencies")
     app = QApplication(sys.argv)
+    # Updates (build 125, task 177): an installer that didn't finish last
+    # time runs again before any window (Windows), and Windows shutting
+    # down or signing out leaves the update for the next quit.
+    import updater
+    if updater.before_window():
+        return 0
+    app.commitDataRequest.connect(updater.session_ending)
     if os.environ.get("FREQ_FALLBACK_LIBS"):
         crashlog.write("[startup] using bundled copies of: "
                        + os.environ["FREQ_FALLBACK_LIBS"])
+    if os.environ.get("FREQ_GLIBC"):
+        # Task 185: the app runs on the glibc it carries.
+        crashlog.write("[startup] glibc: " + os.environ["FREQ_GLIBC"])
     if "/frequencies/tls/" in os.environ.get("GNUTLS_SYSTEM_PRIORITY_FILE", ""):
         crashlog.write("[startup] using bundled TLS settings (no "
                        "/etc/crypto-policies on this system)")
@@ -177,6 +206,11 @@ def main():
     storage.lower_old_stall_timeout(settings)
     storage.raise_old_noise_volume(settings)
     storage.apply_new_defaults_120(settings)
+    # A theme that was removed (Graphite, Oxide, Cathode: build 130) falls
+    # back to the default.
+    import themes
+    if settings.get("theme") and settings["theme"] not in themes.THEMES:
+        settings["theme"] = themes.DEFAULT
     history = storage.load_history()
 
     # ---- NEW: theme -------------------------------------------------------
@@ -189,8 +223,12 @@ def main():
     # desktop entry is what makes the icon appear at all — including in the
     # tray, which otherwise warns that no icon is set.
     from PyQt5.QtGui import QGuiApplication
-    QGuiApplication.setDesktopFileName("frequencies")
-    app.setApplicationName("Frequencies")
+    import desktopentry
+    QGuiApplication.setDesktopFileName(desktopentry.APP_ID)
+    app.setApplicationName(desktopentry.WM_CLASS)
+    # A launcher entry so the dock shows the icon, not a gear (task 189).
+    desktopentry.install(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "icons"))
 
     icon = app_icon()
     if not icon.isNull():
@@ -300,6 +338,9 @@ def main():
             sip.delete(win)
         except RuntimeError:
             pass
+        # Last: a downloaded build goes in place only on a real quit
+        # (hiding to the tray never gets here).
+        updater.apply_on_quit()
 
 
 if __name__ == "__main__":
@@ -307,6 +348,7 @@ if __name__ == "__main__":
         # Windows (WP2): the in-app browser runs as a second copy of the
         # exe (there is no separate Python to run webview_helper.py).
         del sys.argv[1]
+        hold_running_mutex()
         import webview_helper
         sys.exit(webview_helper.main())
     sys.exit(main())

@@ -72,8 +72,12 @@ class LyricLine(QLabel):
 
     resync_here = pyqtSignal(object)        # this line's start, in ms
 
-    def __init__(self, text, parent=None):
+    def __init__(self, text, parent=None, on_dark=False):
         self.start_ms = None
+        # The full-screen view sits on a darkened backdrop whatever the
+        # theme is, so its words are white; the side panel's are the
+        # theme's text color (build 130, light themes).
+        self._on_dark = on_dark
         super().__init__(text, parent)
         self.setWordWrap(True)
         self.setAlignment(Qt.AlignCenter)
@@ -164,9 +168,9 @@ class LyricLine(QLabel):
         super().mouseDoubleClickEvent(e)
 
     def reaccent(self):
-        """Repaint after the accent moves, without changing state."""
-        if self._active:
-            self.refresh()
+        """Repaint after the accent or the theme moves, without changing
+        state."""
+        self.refresh()
 
     SIZE = 20               # scaled by the lyrics size setting
 
@@ -179,6 +183,9 @@ class LyricLine(QLabel):
         f.setPixelSize(size)
         f.setWeight(QFont.Bold if self._active else QFont.Normal)
         self.setFont(f)
+        ink = "#ffffff" if self._on_dark else T["text"]
+        # Dark words on a light page need a little more than white on dark.
+        more = 0 if self._on_dark or not T.get("light") else 30
         if self._active:
             # The accent, not white: the line being sung is the one thing
             # on the panel that is changing, and the colour is already
@@ -192,9 +199,9 @@ class LyricLine(QLabel):
             # text with one slightly brighter line in it rather than as a
             # song moving through the words. The timed case can afford a
             # much deeper dim, because something is always lit.
-            colour = "rgba(255, 255, 255, 48)"     # already gone past
+            colour = theme.tint(ink, 48 + more)    # already gone past
         else:
-            colour = "rgba(255, 255, 255, 60)"     # not reached yet
+            colour = theme.tint(ink, 60 + more)    # not reached yet
         # Size and weight go in the stylesheet as well as the font.
         #
         # The theme sets font-size on QWidget, which every QLabel inherits,
@@ -219,8 +226,9 @@ class LyricsView(QScrollArea):
         for _start, widget in self._lines:
             widget.refresh()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, on_dark=False):
         super().__init__(parent)
+        self._on_dark = on_dark
         self.setWidgetResizable(True)
         self.setFrameShape(QScrollArea.NoFrame)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -297,7 +305,8 @@ class LyricsView(QScrollArea):
         """
         self.clear()
         if not lines:
-            placeholder = LyricLine(message or "No lyrics found for this song.")
+            placeholder = LyricLine(message or "No lyrics found for this song.",
+                                   on_dark=self._on_dark)
             placeholder.set_state(False, False)
             self._add_line(placeholder)
             self._lines.append((None, placeholder))
@@ -309,7 +318,7 @@ class LyricsView(QScrollArea):
         self._watch_user_scroll()
         for entry in lines:
             start, text = entry if isinstance(entry, (tuple, list)) else (None, entry)
-            w = LyricLine(text)
+            w = LyricLine(text, on_dark=self._on_dark)
             w.start_ms = start
             w.resync_here.connect(self.resync_requested.emit)
             # Dim until the song reaches it, when there is a timing to
@@ -684,7 +693,7 @@ class NowPlaying(QWidget):
         # Art and titles, then the words, then who made them: three
         # columns, most concrete on the left.
         outer.addWidget(self._build_left(), 0)
-        self.lyrics = LyricsView()
+        self.lyrics = LyricsView(on_dark=True)
         outer.addWidget(self.lyrics, 3)
         self._artist_col = self._build_artist()
         outer.addWidget(self._artist_col, 2)
@@ -712,7 +721,7 @@ class NowPlaying(QWidget):
         self.song = QLabel("Nothing playing")
         self.song.setWordWrap(True)
         self.song.setStyleSheet(
-            f"background: transparent; color: {T['text']}; font-size: 30px;")
+            "background: transparent; color: #ffffff; font-size: 30px;")
         lay.addWidget(self.song)
 
         self.artist = QLabel("")
@@ -755,7 +764,7 @@ class NowPlaying(QWidget):
         self.artist_name = QLabel("")
         self.artist_name.setWordWrap(True)
         self.artist_name.setStyleSheet(
-            f"background: transparent; color: {T['text']}; font-size: 22px;")
+            "background: transparent; color: #ffffff; font-size: 22px;")
         lay.addWidget(self.artist_name)
 
         self.artist_bio = QLabel("")

@@ -190,6 +190,7 @@ class ShareDialog(QDialog):
         self.setMinimumWidth(520)
         self._url = url
         self._code = code or url
+        self._name, self._accent = name, accent
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(20, 18, 20, 18)
@@ -267,6 +268,28 @@ class ShareDialog(QDialog):
             button.setAutoDefault(False)
             button.setDefault(False)
         outer.addWidget(buttons)
+
+    # -- the picture link (build 128) -------------------------------------
+
+    def wait_for_link(self):
+        """The picture is being uploaded: the code gets a link to it when
+        that's done, so Save and Copy wait for it."""
+        self.save_image_btn.setEnabled(False)
+        self.copy_image_btn.setEnabled(False)
+        self._say("Adding a link to the full-size picture…")
+
+    def set_code(self, code, said=""):
+        """Show a new code (now with the picture's link), or the old one
+        again when there is none."""
+        if code:
+            self._code = code
+            pixmap = qr_pixmap(code, 360, self._name, self._accent)
+            if pixmap is not None:
+                self.qr.setPixmap(pixmap)
+        ready = self.qr.pixmap() is not None and not self.qr.pixmap().isNull()
+        self.save_image_btn.setEnabled(ready)
+        self.copy_image_btn.setEnabled(ready)
+        self._say(said)
 
     # -- actions -----------------------------------------------------------
 

@@ -27,6 +27,7 @@ and the Shazam / lyrics side calls `win.on_song(...)`, `win.on_lyrics(...)`,
 from PyQt5.QtCore import QEvent, QObject, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import (QApplication, QHBoxLayout, QLabel, QMenu,
+                             QMessageBox,
                              QPushButton, QTabWidget, QVBoxLayout, QWidget)
 
 import os
@@ -450,6 +451,7 @@ class FrequenciesWindow(Shell):
             targets={
                 "search": lambda: self.discover_page.sources._buttons.get(
                     "search"),
+                "results": lambda: self.discover_page.list,
                 "added": lambda: self.sidebar._buttons["stations"][0],
                 "queue": lambda: self.stations_page.list,
                 "shazam": lambda: self.player.shazam_btn,
@@ -474,9 +476,18 @@ class FrequenciesWindow(Shell):
             winamp=lambda: getattr(self._classic, "dock", None),
             photos=(self._clippy_offer_photos, self._clippy_photos_on))
         self.companion.tip("welcome")
-        # Tip 1.5 is done once Search is clicked (task 163).
-        self.discover_page.sources.chosen.connect(
-            lambda key: key == "search" and self.companion.done("search"))
+        # Tip 1.5 is done once Search is clicked (task 163); if it was
+        # showing, he stays and moves on to tip 1.75 about the results
+        # (task 196).
+        self.discover_page.sources.chosen.connect(self._clippy_search_clicked)
+
+    def _clippy_search_clicked(self, key):
+        if key != "search":
+            return
+        if self.companion.current == "search":
+            self.companion.move_on("search", "results")
+        else:
+            self.companion.done("search")
 
     def _clippy_offer_photos(self):
         """Clippy's photo pack question: only while it is off and there
@@ -640,10 +651,34 @@ class FrequenciesWindow(Shell):
         import photopack
         photopack.keeper(self.lib.settings).changed.connect(
             self._photo_pack_changed)
+        # Updates (build 125, task 177): checked at every launch, applied
+        # when the app quits; a new build says so once.
+        import updater
+        updates = updater.updater(self.lib.settings, self)
+        updates.ready.connect(self.notify)
+        updates.start()
+        QTimer.singleShot(3000, self._updated_note)
         self.history_page.favourited.connect(
             lambda key, on: (self.lib.set_favourite(key, on),
                              self.refresh_history()))
 
+
+    def _updated_note(self):
+        """"Updated to build N" and what's new, once (build 125)."""
+        import updater
+        note = updater.updater().updated_note()
+        if note is None:
+            return
+        build, lines = note
+        box = QMessageBox(self)
+        box.setWindowTitle("Frequencies")
+        box.setIcon(QMessageBox.Information)
+        box.setText(f"Updated to build {build}")
+        if lines:
+            box.setInformativeText("What's new:\n" + "\n".join(
+                "\u2022 " + line for line in lines))
+        box.setAttribute(Qt.WA_DeleteOnClose)
+        box.open()
 
     # -- data --------------------------------------------------------------
 
@@ -1039,6 +1074,7 @@ class FrequenciesWindow(Shell):
         if self._classic.open():
             self.hide()
             self.companion.tip("winamp")
+            self.companion.tip_if_idle("winampeq")
             self._llama_once()
             return
 
@@ -1051,6 +1087,7 @@ class FrequenciesWindow(Shell):
         if self._classic.open():
             self.hide()
             self.companion.tip("winamp")
+            self.companion.tip_if_idle("winampeq")
             self._llama_once()
             return
         self._classic = None
@@ -1218,6 +1255,9 @@ class FrequenciesWindow(Shell):
             # Signing in happens elsewhere and the badge has to catch up.
             self.discover_page.refresh_connections()
             self.discover_page.query.setFocus()
+            # Clippy's tip 1 told them to come here: straight on to tip
+            # 1.5, no leave animation (task 186).
+            self.companion.move_on("welcome", "search")
         elif key == "schedule":
             self.companion.tip("schedule", self.schedule_page)
 
@@ -1330,9 +1370,20 @@ class FrequenciesWindow(Shell):
             return False, "Already in your frequencies."
 
         station["is_new"] = True
-        self.lib.stations.append(storage._normalize_station(station))
+        station = storage._normalize_station(station)
+        self.lib.stations.append(station)
         self.lib.save_stations()
+        self._find_full_art([station])
         return True, storage.station_display_name(station)
+
+    def _find_full_art(self, stations):
+        """Stations that arrived with a thumbnail of their art (a QR code,
+        a code, a share zip): find the same picture at full size, in the
+        background (build 126, task 178)."""
+        upgrade = getattr(self, "_art_upgrade", None)
+        if upgrade is not None:
+            for station in stations:
+                upgrade.queue(station, force=True)
 
     def _refresh_new_badge(self):
         """Show "New!" on Saved Frequencies while anything is unplayed."""
@@ -1368,11 +1419,9 @@ class FrequenciesWindow(Shell):
             self.notify("That isn't a station code.", transient=True)
             return
         station = storage._normalize_station(station)
+        # Its cover came through as a thumbnail; add_station goes and
+        # finds the real one.
         self.add_station(station)
-        # Its cover came through as a thumbnail; go and find the real one.
-        upgrade = getattr(self, "_art_upgrade", None)
-        if upgrade is not None:
-            upgrade.queue(station)
 
     def add_from_url(self):
         from dialogs import AddStationDialog
@@ -2189,6 +2238,7 @@ class FrequenciesWindow(Shell):
         self.lib.stations.append(station)
         self.lib.save_stations()
         self.reload()
+        self._find_full_art([station])
         self._added_message(
             f"Added {storage.station_display_name(station)} to your stations.")
         # Tip 14 (task 173) every time, asked first so tips 2 and 12,
@@ -2852,6 +2902,14 @@ class FrequenciesWindow(Shell):
         # Widgets that keep colours of their own have to be asked; a new
         # stylesheet does not reach a background set in code.
         self.panel.restyle()
+        self.help_page.restyle()
+        # An empty cover is drawn in the theme's own surface color, so it
+        # is drawn again (build 130).
+        art = self.player.art
+        if art._showing_placeholder() and not art._tint:
+            art.set_art(QPixmap())
+            if getattr(self, "_art_expanded", False):
+                self._redraw_dock_art()
         if self._chat_window is not None:
             self._chat_window.restyle()
         self.player.refresh_accent()
@@ -3413,10 +3471,38 @@ class FrequenciesWindow(Shell):
         import stationlist
         dialog = ShareDialog(name, station.get("url") or "", code, dropped,
                              stationlist.station_color(station), self)
+        self._link_shared_picture(station, dialog)
         # The code, as an image, is the file now. There is no second
         # format to save in — a picture of the code opens on any
         # machine and carries everything the station needs.
         dialog.exec_()
+
+    def _link_shared_picture(self, station, dialog):
+        """A picture of your own goes to the picture service, so the code
+        can carry a link to it at full size (build 128, artlink.py)."""
+        import artlink
+        if not artlink.needs_upload(station):
+            return
+        job = artlink.Upload(station, self)
+
+        def uploaded(station_id, path, link, _reason):
+            held = self.lib.station_by_id(station_id) or station
+            if link and (held.get("custom_art_path") or "") == path:
+                storage.set_art_link(held, link, path)
+                self.lib.save_stations()
+                code, _dropped = storage.station_to_code(held)
+                said = ""
+            else:
+                code = ""
+                said = ("Couldn't upload the picture, so the code carries "
+                        "a small copy.")
+            try:
+                dialog.set_code(code, said)
+            except RuntimeError:            # the window was closed
+                pass
+        job.done.connect(uploaded)
+        dialog.wait_for_link()
+        job.start()
 
     def share_as_zip(self, stations):
         """Zip saved frequencies with their rich data and show the zip in
@@ -3511,6 +3597,7 @@ class FrequenciesWindow(Shell):
             self.lib.save_stations()
             self.reload()
             self._refresh_new_badge()
+            self._find_full_art(added)
         skipped = len(stations) - len(added)
         self.notify(f"Added {len(added)} frequenc"
                     + ("y" if len(added) == 1 else "ies")
@@ -3933,6 +4020,9 @@ class FrequenciesWindow(Shell):
             tabs = d.findChild(QTabWidget)
             if tabs is not None:
                 tabs.setCurrentIndex(tab)
+        # Clippy's first-time tip about the ten-band switch (task 197).
+        self.companion.open_dialog(d)
+        self.companion.tip("stationeq")
         if not d.exec_():
             return
 

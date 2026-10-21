@@ -28,6 +28,13 @@ from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 
+def _is_youtube_url(url):
+    """A YouTube address (a station saved by link rather than as one)."""
+    from urllib.parse import urlparse
+    host = (urlparse(str(url)).hostname or "").lower()
+    return host == "youtu.be" or host.endswith("youtube.com")
+
+
 class Desktop(QObject):
     def __init__(self, window, library, player, icon=None, parent=None):
         super().__init__(parent or window)
@@ -225,9 +232,27 @@ class Desktop(QObject):
         checkable = getattr(playback, "checkable", None)
         check_url = getattr(playback, "check_url", None)
         targets = []
+        cleared = False
         for station in self.lib.stations:
             if storage.is_local_station(station) \
                     or storage.is_youtube_station(station):
+                continue
+            if storage.is_ibroadcast_station(station) \
+                    or _is_youtube_url(station.get("url", "")):
+                # Not part of the sweep (build 131, task 187): a plain
+                # fetch of a signed iBroadcast address or a YouTube page
+                # proves nothing about them, so they were showing as down
+                # right after launch. They go down only through their own
+                # checks (iBroadcast sign-in, YouTube resolver, a real
+                # failed play). A "down" a launch check of an older build
+                # left behind is cleared here.
+                entry = (self.lib.health.get(str(station.get("id")))
+                         or self.lib.health.get(station.get("id")) or {})
+                if entry.get("down") and not str(
+                        entry.get("last_error", "")).lower().startswith(
+                            ("signed out", "not signed in")):
+                    storage.mark_ok(self.lib.health, station.get("id"))
+                    cleared = True
                 continue
             if checkable is not None and not checkable(station):
                 continue
@@ -235,6 +260,9 @@ class Desktop(QObject):
                    else station.get("url", ""))
             if url.startswith("http"):
                 targets.append((station["id"], url))
+        if cleared:
+            storage.save_health(self.lib.health)
+            self.win.reload()
         if not targets:
             crashlog.write("[health] launch check: no saved streams to check")
             return
@@ -248,6 +276,9 @@ class Desktop(QObject):
 
     def _launch_result(self, station_id, ok, reason):
         station = self.lib.station_by_id(station_id) or {}
+        if not ok and (storage.is_ibroadcast_station(station)
+                       or _is_youtube_url(station.get("url", ""))):
+            return
         healthlog.note(storage.station_display_name(station), ok, reason)
         if ok:
             storage.mark_ok(self.lib.health, station_id)

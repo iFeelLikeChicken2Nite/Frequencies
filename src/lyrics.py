@@ -60,6 +60,7 @@ def _fallback_lyrics(artist, title, timeout=8):
         response.raise_for_status()
         payload = response.json()
     except Exception as exc:  # noqa: BLE001
+        _log(f"lyrics.ovh failed: {exc}")
         return None, type(exc).__name__
 
     text = (payload.get("lyrics") or "").strip()
@@ -71,6 +72,43 @@ def _fallback_lyrics(artist, title, timeout=8):
         "instrumental": False,
         "source": "lyrics.ovh",
     }, None
+
+
+RETRY_WAITS = (1.0, 2.5)       # seconds before the 2nd and 3rd try
+
+
+def _get(url, headers, params=None, timeout=TIMEOUT):
+    """requests.get that quietly tries again on a 5xx, a timeout or a
+    dropped connection (a busy server clears in a second or two). A 4xx
+    answer is returned at once: retrying it can't change it."""
+    import time
+
+    last = None
+    for attempt in range(len(RETRY_WAITS) + 1):
+        try:
+            response = requests.get(url, params=params, headers=headers,
+                                    timeout=timeout)
+            if response.status_code < 500:
+                return response
+            last = requests.HTTPError(
+                f"{response.status_code} Server Error", response=response)
+        except (requests.Timeout, requests.ConnectionError) as exc:
+            if isinstance(exc, requests.exceptions.SSLError):
+                raise
+            last = exc
+        if attempt < len(RETRY_WAITS):
+            time.sleep(RETRY_WAITS[attempt])
+    if isinstance(last, requests.HTTPError):
+        return last.response     # still 5xx: the caller treats it as busy
+    raise last
+
+
+def _log(text):
+    try:
+        import crashlog
+        crashlog.write(f"[lyrics] {text}")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _network_error(exc):
@@ -96,7 +134,9 @@ def _network_error(exc):
     if isinstance(exc, _requests.exceptions.ConnectionError):
         return LyricsError("Couldn't reach the lyrics server (lrclib.net).",
                            network=True)
-    return LyricsError(f"Lyrics lookup failed: {exc}", network=True)
+    _log(f"lookup failed: {exc}")
+    return LyricsError("The lyrics service is busy right now. "
+                       "Try again in a little while.", network=True)
 
 
 def _clean(text):
@@ -170,16 +210,12 @@ def fetch(artist, title):
     if fallback:
         return fallback
 
-    # Say which sources were tried and what each did. A bare "no lyrics"
-    # cannot distinguish a song nobody has transcribed from two services
-    # that are both unreachable, and those need different responses from
-    # the person reading it.
-    tried = [
-        f"lrclib.net: {primary_error or 'no match'}",
-        f"lyrics.ovh: {fallback_error or 'no match'}",
-    ]
+    # Details go to the log only; the panel gets one plain sentence.
+    _log(f"lrclib: {primary_error or 'no match'}; "
+         f"lyrics.ovh: {fallback_error or 'no match'}")
     if primary_error or fallback_error:
-        raise LyricsError("  |  ".join(tried), network=True)
+        raise LyricsError("The lyrics service is busy right now. "
+                          "Try again in a little while.", network=True)
     return None
 
 
@@ -190,11 +226,8 @@ def _fetch_lrclib(artist, title):
 
     # 1. Exact match.
     try:
-        response = requests.get(
-            f"{BASE}/get",
-            params={"artist_name": artist, "track_name": title},
-            headers=headers, timeout=TIMEOUT,
-        )
+        response = _get(f"{BASE}/get", headers,
+                        params={"artist_name": artist, "track_name": title})
         if response.status_code == 200:
             parsed = _result_to_dict(response.json())
             if parsed:
@@ -204,21 +237,22 @@ def _fetch_lrclib(artist, title):
     except requests.RequestException as exc:
         raise _network_error(exc) from exc
     except ValueError as exc:
-        raise LyricsError(f"Unreadable response: {exc}") from exc
+        _log(f"unreadable response: {exc}")
+        raise LyricsError("The lyrics service is busy right now. "
+                          "Try again in a little while.") from exc
 
     # 2. Fuzzier search.
     query = " ".join(part for part in (artist, title) if part)
     try:
-        response = requests.get(
-            f"{BASE}/search", params={"q": query},
-            headers=headers, timeout=TIMEOUT,
-        )
+        response = _get(f"{BASE}/search", headers, params={"q": query})
         response.raise_for_status()
         results = response.json()
     except requests.RequestException as exc:
         raise _network_error(exc) from exc
     except ValueError as exc:
-        raise LyricsError(f"Unreadable response: {exc}") from exc
+        _log(f"unreadable response: {exc}")
+        raise LyricsError("The lyrics service is busy right now. "
+                          "Try again in a little while.") from exc
 
     if not isinstance(results, list):
         return None

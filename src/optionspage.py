@@ -169,6 +169,8 @@ class OptionsPage(QWidget):
             lambda: self._into("Accounts", self._build_ibroadcast, True),
             lambda: self._into("Accounts", self._end),
             lambda: self._into("Library and tools", self._build_library),
+            lambda: self._into("Library and tools", self._build_updates,
+                               True),
             lambda: self._into("Library and tools", self._build_diagnostics,
                                True),
             lambda: self._into("Library and tools", self._end),
@@ -252,6 +254,8 @@ class OptionsPage(QWidget):
         # Signing in to iBroadcast happens while adding a station, after
         # this page was built (task 166).
         self._refresh_ib()
+        # Photos added since (Edit this artist…) count at once (task 194).
+        self._refresh_photo_count()
         super().showEvent(e)
 
     # -- helpers -----------------------------------------------------------
@@ -526,7 +530,10 @@ class OptionsPage(QWidget):
                      "download/photo-pack.json"),
                     ("reports", "Report address",
                      "https://github.com/<you>/<repo> (blank: the photo "
-                     "pack's repository)")):
+                     "pack's repository)"),
+                    ("art", "Picture link address",
+                     "https://<your worker>.workers.dev (shared pictures "
+                     "for QR codes)")):
                 field = QLineEdit(photopack._address(name))
                 field.setPlaceholderText(hint)
                 field.setMinimumWidth(420)
@@ -542,14 +549,17 @@ class OptionsPage(QWidget):
                 field.editingFinished.connect(saved)
                 lay.addWidget(_row(QLabel(label), field))
             note = QLabel(
-                "Dev build only. Neither address is a secret: the builds "
-                "you share carry them. Thumbs-down reports are filed on "
-                "the report address's repository.")
+                "Dev build only. None of these addresses is a secret: the "
+                "builds you share carry them. Thumbs-down reports are filed "
+                "on the report address's repository. Shared pictures that "
+                "have no address online are uploaded to the picture link "
+                "address, so QR codes can carry a link to them.")
             note.setProperty("role", "secondary")
             note.setWordWrap(True)
             lay.addWidget(note)
             self._build_report_token(lay)
             self._build_publish(lay)
+            self._build_publish_update(lay)
         self.lay.addWidget(box)
 
     def _build_report_token(self, lay):
@@ -617,6 +627,14 @@ class OptionsPage(QWidget):
         lay.addWidget(_row(photos, bios))
         lay.addWidget(_row(vis))
         lay.addWidget(self.publish_status)
+        # How many of your photos the published pack has (task 194).
+        self.photo_count = QLabel("")
+        self.photo_count.setProperty("role", "secondary")
+        self.photo_count.setWordWrap(True)
+        self.photo_count.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        lay.addWidget(self.photo_count)
+        self._published_pack = None
+        self._refresh_photo_count(fetch=True)
         note = QLabel(
             "Photos go up in base32, twice; users who opted in get them at "
             "their next check (Check now, or within a day). Bio fixes reach "
@@ -644,10 +662,115 @@ class OptionsPage(QWidget):
                 button.setEnabled(False)
             job.done.connect(lambda *_: [b.setEnabled(True)
                                          for b in buttons])
+            if kind == "photos":
+                job.done.connect(
+                    lambda ok, _text: ok and self._refresh_photo_count(
+                        fetch=True))
             job.start()
         photos.clicked.connect(lambda: publish("photos"))
         bios.clicked.connect(lambda: publish("bios"))
         vis.clicked.connect(lambda: publish("visualizer"))
+
+    def _refresh_photo_count(self, fetch=False):
+        """Your photos here against the published pack's (task 194).
+        The pack's list is read once, and again after a photos publish."""
+        label = getattr(self, "photo_count", None)
+        if label is None:
+            return
+        import photopack
+        job = getattr(self, "_count_job", None)
+        if not fetch or job is not None:
+            known = self._published_pack
+            label.setText(photopack.photo_count(*known) if known
+                          else photopack.photo_count() + (
+                              " Checking the published pack…" if job
+                              else ""))
+            return
+        address = photopack.pack_address()
+        if not address:
+            label.setText(photopack.photo_count(None, "no photo pack "
+                                                "address"))
+            return
+        label.setText(photopack.photo_count() + " Checking the published "
+                      "pack…")
+
+        def came(manifest, why):
+            self._count_job = None
+            self._published_pack = (manifest, why)
+            self._refresh_photo_count()
+        job = photopack.ManifestFetch(address)
+        job.done.connect(came)
+        self._count_job = job
+        job.start()
+
+    def _build_publish_update(self, lay):
+        """Dev builds: put a user build on the releases repository, which
+        every user build updates from (build 125, task 177)."""
+        import updater
+        from PyQt5.QtWidgets import QLineEdit
+        field = QLineEdit(updater.token())
+        field.setEchoMode(QLineEdit.Password)
+        field.setPlaceholderText("github_pat_… (frequencies-releases only)")
+        field.setMinimumWidth(420)
+        field.editingFinished.connect(
+            lambda: updater.save_token(field.text()))
+        lay.addWidget(_row(QLabel("Release token"), field))
+        button = QPushButton("Publish this build as an update…")
+        status = QLabel("")
+        status.setProperty("role", "secondary")
+        status.setWordWrap(True)
+        lay.addWidget(_row(button))
+        lay.addWidget(status)
+        repo = updater.repository()
+        where = f"{repo[0]}/{repo[1]}" if repo else "<you>/frequencies-releases"
+        note = QLabel(
+            f"Pick the user build you made ({updater.ASSETS[updater.OS]}); "
+            f"it goes on {where} and every user build installs it the next "
+            "time it's closed. Linux and Windows each publish their own "
+            "file to the same release. The token: github.com > Settings > "
+            "Developer settings > Fine-grained tokens > Generate, only "
+            "that repository, Contents: Read and write. It stays on this "
+            "PC and is never put in a build.")
+        note.setProperty("role", "secondary")
+        note.setWordWrap(True)
+        lay.addWidget(note)
+
+        def publish():
+            updater.save_token(field.text())
+            job = getattr(self, "_release_job", None)
+            if job is not None and job.isRunning():
+                return
+            start = self.lib.settings.get("update_publish_folder") or \
+                os.path.dirname(os.environ.get("APPIMAGE", "")) or \
+                os.path.expanduser("~")
+            path, _ = QFileDialog.getOpenFileName(
+                self, "Publish which build?", start,
+                f"User build ({updater.ASSETS[updater.OS]});;All files (*)")
+            if not path:
+                return
+            self.lib.settings["update_publish_folder"] = os.path.dirname(path)
+            info, problem = updater.build_info(path)
+            if problem:
+                status.setText(f"Not published: {problem}.")
+                return
+            asked = QMessageBox.question(
+                self, "Publish this build",
+                f"Publish build {info.get('build')} for "
+                f"{updater.OS_NAMES[updater.OS]} to {where}?\n\nEveryone "
+                "using Frequencies on "
+                f"{updater.OS_NAMES[updater.OS]} gets it the next time "
+                "they open and close the app.")
+            if asked != QMessageBox.Yes:
+                return
+            job = updater.PublishUpdate(path)
+            job.progress.connect(status.setText)
+            job.done.connect(lambda ok, text: (
+                status.setText(("Done: " if ok else "Failed: ") + text + "."),
+                button.setEnabled(True)))
+            self._release_job = job
+            button.setEnabled(False)
+            job.start()
+        button.clicked.connect(publish)
 
     # -- library -----------------------------------------------------------
 
@@ -683,6 +806,33 @@ class OptionsPage(QWidget):
                 "ship as one of the featured suggestions")
             lay.addWidget(_row(featured))
 
+        self.lay.addWidget(box)
+
+    def _build_updates(self):
+        """Updates (build 125, task 177): checked at every launch; this is
+        the button for checking now."""
+        import updater
+        box, lay = _section(
+            "Updates",
+            "Frequencies checks for a new build each time it starts, "
+            "downloads it in the background and puts it in place when you "
+            "close the app. Your settings and frequencies stay as they are.")
+        updates = updater.updater()
+        status = QLabel(updates.text if updates else "")
+        status.setProperty("role", "secondary")
+        status.setWordWrap(True)
+        check = QPushButton("Check for updates")
+        show = QPushButton("Show the download")
+        show.setVisible(bool(updates and updates.manual))
+        lay.addWidget(_row(check, show))
+        lay.addWidget(status)
+        if updates is not None:
+            check.clicked.connect(lambda: updates.check(quiet=False))
+            updates.status.connect(status.setText)
+            updates.status.connect(
+                lambda _t: show.setVisible(bool(updates.manual)))
+            show.clicked.connect(
+                lambda: self._open_folder_of(updates.manual))
         self.lay.addWidget(box)
 
     def _build_diagnostics(self):
@@ -876,8 +1026,11 @@ class OptionsPage(QWidget):
             if history:
                 self.lib.history[:] = history
                 self.lib.save_history()
+            # A backup carries no artist photos (task 194): the ones
+            # chosen on this computer stay.
             if overrides:
-                storage.save_artist_overrides(overrides)
+                storage.save_artist_overrides(
+                    storage.keep_own_photos(overrides))
             if station_overrides:
                 storage.save_station_overrides(station_overrides)
             message = f"Restored {len(stations)} station(s)."

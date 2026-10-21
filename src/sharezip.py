@@ -36,7 +36,11 @@ def shareable(station):
 
 def _safe(name):
     text = "".join(c for c in (name or "") if c.isalnum() or c in " -_")
-    return text.strip() or "frequency"
+    text = text.strip()[:80].strip()
+    # A folder Windows can't make (CON, NUL, COM1…; build 126).
+    if text.upper() in storage._WINDOWS_RESERVED:
+        text = "_" + text
+    return text or "frequency"
 
 
 def default_path(stations):

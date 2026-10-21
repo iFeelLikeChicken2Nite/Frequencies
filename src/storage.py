@@ -19,6 +19,7 @@ import base64
 import json
 import os
 import random
+import re
 import shutil
 import time
 import uuid
@@ -150,7 +151,12 @@ _RETIRED_STATION_KEYS = ("vocal_clarity", "enhance_quality", "safe_enhance",
 
 # Not a setting anyone chooses: set when a station's artwork arrived as a
 # code's thumbnail, cleared once the real cover has been found.
-_KEPT_STATION_KEYS = ("art_from_code",)
+# art_checked: when the last search for its full-size art found nothing
+# (build 126, artupgrade.py). art_url / art_url_sha: where the station's
+# picture is online, and the sha1 of the file that address gave us
+# (build 128, art_link below).
+_KEPT_STATION_KEYS = ("art_from_code", "art_checked", "art_url",
+                      "art_url_sha")
 
 
 STATION_DEFAULTS = {
@@ -525,9 +531,9 @@ HISTORY_HARD_CAP = 5000
 
 def _default_stations():
     """What a fresh profile starts with (task 170, build 121): the
-    developer's seven picks, read from their shared QR codes into the
-    shipped default_stations.json (settings and thumbnail artwork, no
-    play counts or tags)."""
+    developer's picks in the shipped default_stations.json (settings and
+    full-size artwork from their share zip since build 127, no play
+    counts or tags)."""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         "default_stations.json")
     try:
@@ -772,13 +778,48 @@ def export_backup(path, stations, settings, health, history=None,
         "settings": settings,
         "health": health,
         "history": history or [],
-        "artist_overrides": artist_overrides or {},
+        # Without their photos (task 194): a path means nothing on
+        # another computer, and the photo pack brings them.
+        "artist_overrides": without_photos(artist_overrides),
         # Corrections for stations that play no music, where the
         # article is about the station rather than an artist.
         "station_overrides": station_overrides or {},
         "artwork": _collect_artwork(stations),
     }
     _atomic_write_json(path, payload)
+
+
+PHOTO_FIELDS = ("photo", "photo_source", "photo_url")
+
+
+def without_photos(overrides):
+    """Artist corrections with their photos left out, for backups and
+    imports (task 194, the user: "those just get downloaded from my
+    github"). An entry that was only a photo goes."""
+    out = {}
+    for key, entry in (overrides if isinstance(overrides, dict)
+                       else {}).items():
+        if not isinstance(entry, dict):
+            continue
+        entry = {k: v for k, v in entry.items() if k not in PHOTO_FIELDS}
+        if entry:
+            out[key] = entry
+    return out
+
+
+def keep_own_photos(incoming):
+    """`incoming` corrections (a backup's, photos already left out) with
+    this computer's own photos put back, for a Replace import."""
+    out = {k: dict(v) for k, v in (incoming or {}).items()}
+    for key, entry in load_artist_overrides().items():
+        if not (entry.get("photo") or "").strip() \
+                or missing_photo(entry.get("photo")):
+            continue
+        target = out.setdefault(key, {})
+        for field in PHOTO_FIELDS:
+            if entry.get(field):
+                target[field] = entry[field]
+    return out
 
 
 def _collect_artwork(stations):
@@ -885,9 +926,7 @@ def read_backup(path):
     history = data.get("history")
     if not isinstance(history, list):
         history = []
-    overrides = data.get("artist_overrides")
-    if not isinstance(overrides, dict):
-        overrides = {}
+    overrides = without_photos(data.get("artist_overrides"))
     stations_overrides = data.get("station_overrides")
     if not isinstance(stations_overrides, dict):
         stations_overrides = {}
@@ -1190,17 +1229,105 @@ def keep_talk_photo(station, path):
     return TALK_PHOTOS + "/" + slug + ext
 
 
+# -- which entry is this artist's (build 132, task 190) ----------------------
+#
+# Songs credit artists in many spellings: "Eminem feat. Dido", "Eminem &
+# Rihanna", "EMINEM", "The Barenaked Ladies", "AC-DC". Corrections and the
+# photo pack are keyed by the one spelling the developer saw, so only that
+# exact credit got its photo. Now the exact name is tried first, then the
+# credit without its featured guests, then its first artist; each also in
+# a loose spelling (case, accents, punctuation, "&"/"and", a leading "The").
+
+_FEATURING = re.compile(
+    r"\s*(?:[(\[]\s*(?:feat\.?|ft\.?|featuring|with)\s|"
+    r"\b(?:feat\.?|ft\.?|featuring)\s).*$", re.IGNORECASE)
+_SEVERAL = re.compile(
+    r"\s*(?:,|&|\+|/|;|\bx\b|\band\b|\bvs\.?(?=\s)|\bmeets\b)\s*",
+    re.IGNORECASE)
+
+
+def _loose_artist(text):
+    import unicodedata
+    text = unicodedata.normalize("NFKD", text or "").casefold()
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    text = re.sub(r"\s*(?:&|\+)\s*", " and ", text)
+    text = re.sub(r"[^\w\s]", "", text)
+    text = " ".join(text.split())
+    return text[4:] if text.startswith("the ") else text
+
+
+def artist_keys(artist):
+    """The names to look an artist up by, most exact first: [(key, how)]."""
+    exact = " ".join((artist or "").split()).lower()
+    if not exact:
+        return []
+    keys = [(exact, "")]
+    main = _FEATURING.sub("", exact).strip()
+    if main and main != exact:
+        keys.append((main, "without the featured artists"))
+    first = _SEVERAL.split(main or exact)[0].strip()
+    if first and first not in (exact, main):
+        keys.append((first, "first artist named"))
+    return keys
+
+
+def find_artist(table, artist):
+    """(key, how) of this artist's entry in `table` (lowercase keys), or
+    ("", ""). `how` is "" for the exact name, else how it was matched."""
+    loose = None
+    for key, how in artist_keys(artist):
+        if key in table:
+            return key, how
+        if loose is None:
+            loose = {}
+            for name in table:
+                loose.setdefault(_loose_artist(name), name)
+            loose.pop("", None)
+        name = loose.get(_loose_artist(key))
+        if name:
+            return name, ", ".join(p for p in (how, "spelled differently")
+                                   if p)
+    return "", ""
+
+
+def _entry_for(table, artist):
+    """The artist's entry from one layer. A credit matched only through
+    its first artist keeps its own name on screen."""
+    key, how = find_artist(table, artist)
+    entry = dict(table.get(key) or {})
+    if how and how != "spelled differently":
+        entry.pop("name", None)
+    return _drop_missing_photo(entry)
+
+
+def missing_photo(photo):
+    """True for a photo that is a file this computer doesn't have."""
+    photo = (photo or "").strip() if isinstance(photo, str) else ""
+    return bool(photo) and not photo.startswith(("http://", "https://")) \
+        and not os.path.isfile(photo)
+
+
+def _drop_missing_photo(entry):
+    """A photo whose file isn't on this computer (corrections copied from
+    another PC, a deleted file) goes, with its credit, so it can't hide
+    the photo pack's (task 194)."""
+    if missing_photo(entry.get("photo")):
+        for field in ("photo", "photo_source", "photo_url"):
+            entry.pop(field, None)
+    return entry
+
+
 def artist_override(artist):
     """The correction for this artist, if there is one.
 
     The user's own file wins over the shipped one, so someone who has
     fixed something locally does not have it undone by an update that
-    disagrees with them.
+    disagrees with them. A layer's photo that isn't on this computer is
+    left out, so the layer below's photo shows (task 194).
     """
-    key = (artist or "").strip().lower()
-    if not key:
+    if not (artist or "").strip():
         return {}
-    merged = dict(load_bundled_artist_overrides().get(key) or {})
+    merged = _entry_for(load_bundled_artist_overrides(), artist)
     # The developer's photo pack (build 91, task 117), for those who
     # opted in: newer than the build's corrections, and the only place
     # their photos come from. The user's own still win.
@@ -1208,11 +1335,18 @@ def artist_override(artist):
     # to every user (photopack.BioUpdate); the pack's photo on top.
     try:
         import photopack
-        merged.update(photopack.bio_entry(key))
-        merged.update(photopack.artist_entry(key))
+        for names, entry_of in ((photopack.bio_names(), photopack.bio_entry),
+                                (photopack.pack_names(),
+                                 photopack.artist_entry)):
+            key, how = find_artist(names, artist)
+            if key:
+                entry = entry_of(key)
+                if how and how != "spelled differently":
+                    entry.pop("name", None)
+                merged.update(entry)
     except Exception:                           # noqa: BLE001
         pass
-    merged.update(load_artist_overrides().get(key) or {})
+    merged.update(_entry_for(load_artist_overrides(), artist))
     return merged
 
 
@@ -1770,9 +1904,20 @@ def station_from_featured(entry):
             station["custom_art_path"] = path
             # A code's artwork is a thumbnail by necessity. Marked as
             # such so the app can go and find the real one later —
-            # nothing else knows the difference by looking.
-            if raw.get("art_name") == "shared.jpg":
+            # nothing else knows the difference by looking. A share zip
+            # carries the file as it was, which is a thumbnail too when
+            # that station itself came from a code (build 126).
+            if raw.get("art_name") == "shared.jpg" or _small_art(path):
                 station["art_from_code"] = True
+            # Where the full picture is online (build 128). With a
+            # thumbnail it is only a lead for artupgrade to check; with
+            # the full picture (a share zip) it describes this file.
+            link = str(raw.get("art_url") or "").strip()
+            if link.startswith(("http://", "https://")):
+                if station.get("art_from_code"):
+                    station["art_url"], station["art_url_sha"] = link, ""
+                else:
+                    set_art_link(station, link, path)
 
     # The display fields, which the entry carries at the top level
     # whether or not it carries a full settings block.
@@ -1801,6 +1946,39 @@ def station_from_featured(entry):
 # the receiving app can fetch again on its own.
 CODE_PREFIX = "FREQ1:"
 CODE_LIMIT = 2800                       # chars, just inside a QR's limit
+
+
+def _file_sha(path):
+    import hashlib
+    try:
+        with open(path, "rb") as f:
+            return hashlib.sha1(f.read()).hexdigest()
+    except OSError:
+        return ""
+
+
+def set_art_link(station, url, path):
+    """Remember that the picture at `path` came from `url` (build 128)."""
+    station["art_url"] = url
+    station["art_url_sha"] = _file_sha(path)
+
+
+def art_link(station):
+    """The address of this station's picture online, or "".
+
+    A code carries it so the other end can fetch the full picture (a QR
+    only fits a 64 px copy). Only while the picture is still the one the
+    address gave: a crop or another file changes the sha1. A thumbnail
+    from a code passes on the link it came with, still unchecked.
+    """
+    url = str(station.get("art_url") or "").strip()
+    path = (station.get("custom_art_path") or "").strip()
+    if not url.startswith(("http://", "https://")) or not path:
+        return ""
+    if station.get("art_from_code"):
+        return url
+    sha = station.get("art_url_sha") or ""
+    return url if sha and sha == _file_sha(path) else ""
 
 
 def code_thumbnail(data, side=64, quality=50):
@@ -1889,7 +2067,8 @@ def station_to_code(station, keep_artwork=True):
     if len(code) > CODE_LIMIT:
         keep = ("name", "url", "custom_name", "kind", "playlist_url",
                 "twitch_channel", "tags", "eq_bass", "eq_mid", "eq_treble",
-                "eq_bands", "gain_db", "insecure", "favicon", "homepage")
+                "eq_bands", "gain_db", "insecure", "favicon", "homepage",
+                "art_url")
         code = encode({k: v for k, v in slim.items() if k in keep})
     return code, False
 
@@ -1950,7 +2129,45 @@ def featured_from_station(station):
             out["art_name"] = os.path.basename(source)
         except OSError:
             pass
+    link = art_link(station)
+    if link and out.get("art_data"):
+        out["art_url"] = link
     return out
+
+
+def _small_art(path, most=128):
+    """Whether the picture at `path` is a thumbnail (header only)."""
+    try:
+        import imagelock
+        from PyQt5.QtGui import QImageReader
+        with imagelock.LOCK:
+            size = QImageReader(path).size()
+        return size.isValid() and max(size.width(), size.height()) <= most
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def safe_file_name(name, fallback="cover.png", most=80):
+    """A file name every OS takes (build 126, task 178).
+
+    The name comes from someone else's machine: a Linux file can be
+    called "KXCI: 91.3?.png", which Windows refuses to create.
+    """
+    name = re.split(r"[\\/]", name or "")[-1]
+    name = re.sub(r'[<>:"|?*\x00-\x1f]', "_", name).strip().rstrip(". ")
+    stem, dot, ext = name.rpartition(".")
+    # "KSIT 99.7 Jack FM" has a dot but no extension.
+    if not dot or not re.fullmatch(r"[A-Za-z0-9]{1,8}", ext):
+        stem, ext = name, ""
+    if stem.split(".")[0].upper() in _WINDOWS_RESERVED:
+        stem = "_" + stem
+    stem = stem[:max(1, most - len(ext) - 1)]
+    name = f"{stem}.{ext}" if ext else stem
+    return name if stem.strip("_ ") else fallback
+
+
+_WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL"} | \
+    {f"{kind}{n}" for kind in ("COM", "LPT") for n in range(1, 10)}
 
 
 def _write_featured_art(station_id, name, blob):
@@ -1963,7 +2180,7 @@ def _write_featured_art(station_id, name, blob):
     try:
         os.makedirs(folder, exist_ok=True)
         target = os.path.join(
-            folder, f"{station_id}-{os.path.basename(name or 'cover.png')}"
+            folder, f"{station_id}-{safe_file_name(name)}"
         )
         with open(target, "wb") as f:
             f.write(data)
