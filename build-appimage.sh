@@ -23,7 +23,7 @@ echo "==> Installing system dependencies (mpv/libmpv, python venv, tools)"
 apt-get update
 apt-get install -y \
     libmpv2 mpv python3-venv python3-pip \
-    file desktop-file-utils imagemagick python3-pil curl binutils
+    file desktop-file-utils appstream imagemagick python3-pil curl binutils
 
 PYVER="$(python3 -c 'import sys; print("python%d.%d" % sys.version_info[:2])')"
 echo "==> Building against ${PYVER}"
@@ -157,16 +157,27 @@ cp icons/*.png AppDir/usr/share/frequencies/icons/
 cp frequencies.png AppDir/usr/share/frequencies/
 cp AppRun AppDir/AppRun
 chmod +x AppDir/AppRun
-cp frequencies.desktop AppDir/
-cp frequencies.desktop AppDir/usr/share/applications/
 cp frequencies.png AppDir/
 cp frequencies.png AppDir/usr/share/icons/hicolor/256x256/apps/
+
+# The AppImage distribution guide (task 195): valid desktop file, AppStream
+# metadata, and the licenses inside the app (see build-appimage-fedora.sh).
+echo "==> Desktop file and AppStream metadata"
+desktop-file-validate frequencies.desktop
+# Also copies the desktop file in, under the AppStream id.
+python3 tools/make_metainfo.py AppDir
+mkdir -p AppDir/usr/share/doc/frequencies
+cp LICENSE THIRD-PARTY.md SOURCES.txt AppDir/usr/share/doc/frequencies/
 
 echo "==> Bundling shared library dependency closure"
 if [ ! -f excludelist ]; then
     curl -fsSL -o excludelist "https://raw.githubusercontent.com/AppImage/pkg2appimage/master/excludelist"
 fi
 python3 bundle_deps.py
+
+echo "==> Licenses of the bundled parts"
+python3 tools/gather_licenses.py AppDir --site-packages "venv/lib/${PYVER}/site-packages" \
+    || echo "    (could not list the licenses; the AppImage still builds)"
 
 echo "==> Downloading appimagetool"
 if [ ! -f appimagetool ]; then
@@ -175,6 +186,6 @@ if [ ! -f appimagetool ]; then
 fi
 
 echo "==> Building AppImage"
-ARCH=x86_64 ./appimagetool --no-appstream AppDir Frequencies-x86_64.AppImage
+ARCH=x86_64 ./appimagetool AppDir Frequencies-x86_64.AppImage
 
 echo "==> Done: ./Frequencies-x86_64.AppImage"

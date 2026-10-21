@@ -26,12 +26,29 @@ EXCLUDELIST_PATH = os.path.join(ROOT, "excludelist")
 LIB_OUT = os.path.join(APPDIR, "usr", "lib")
 # Copies of excludelist libraries, used only on a system that lacks them.
 FALLBACK_OUT = os.path.join(LIB_OUT, "fallback")
+# The build machine's glibc (task 185). AppRun starts the app through
+# this folder's loader, so it runs where the system's glibc is older
+# (SteamOS 3.8 has 2.41, the Fedora 44 build needs 2.43). Kept apart
+# from usr/lib and never on LD_LIBRARY_PATH: only the bundled loader
+# is handed this folder.
+GLIBC_OUT = os.path.join(LIB_OUT, "glibc")
 
-# Never shipped, not even as a fallback: glibc has to be the system's own.
+# glibc's own libraries: they go in GLIBC_OUT, never in usr/lib or
+# fallback/.
 GLIBC = ("ld-linux", "libc.so", "libm.so", "libmvec.so", "libdl.so",
          "libpthread.so", "librt.so", "libresolv.so", "libutil.so",
          "libanl.so", "libnss_", "libthread_db.so", "libBrokenLocale.so",
          "libcidn.so")
+# Always bundled, needed or not by the scan: one loader, one libc and
+# the stubs beside them. A system library loaded into the app (the GL
+# driver, say) may ask for libpthread.so.0 or libdl.so.2, and the
+# system's copy, from an older glibc, doesn't go with the bundled libc.
+# libnss_files/dns/compat are glibc's own too (the other NSS modules,
+# systemd's, stay the system's).
+GLIBC_SET = ("libc.so.6", "libm.so.6", "libmvec.so.1", "libpthread.so.0",
+             "libdl.so.2", "librt.so.1", "libutil.so.1", "libanl.so.1",
+             "libresolv.so.2", "libBrokenLocale.so.1", "libnss_files.so.2",
+             "libnss_dns.so.2", "libnss_compat.so.2")
 
 # The libraries whose age matters, not just whether they are there: the
 # bundle may need a newer one than the system has (built on a newer
@@ -190,7 +207,8 @@ def main():
             # libmpv will not load without it (task 160). So a copy
             # goes in fallback/<soname>/, and AppRun adds that folder
             # only on a system that lacks the library (or, for
-            # libstdc++, has an older one).
+            # libstdc++, has an older one). glibc goes in its own
+            # folder (bundle_glibc).
             if not soname.startswith(GLIBC):
                 keep = os.path.join(FALLBACK_OUT, soname)
                 os.makedirs(keep, exist_ok=True)
@@ -219,7 +237,11 @@ def main():
             print(f"        ... and {len(from_host) - 10} more")
         print()
 
+    glibc = bundle_glibc(all_deps)
     write_requirements(seeds)
+    write_fallback_symbols(seeds)
+    if glibc:
+        print(f"glibc bundled: {', '.join(glibc)}")
     if fallbacks:
         print(f"Fallback copies (used only where the system lacks them): "
               f"{', '.join(sorted(fallbacks))}")
@@ -240,6 +262,106 @@ def main():
     print(f"{len(names)} files, {total / (1024 * 1024):.1f} MiB in {LIB_OUT}")
 
 
+def bundle_glibc(all_deps):
+    """Copy the build machine's glibc into GLIBC_OUT (task 185).
+
+    Taken from the folder the scanned binaries' libc.so.6 came from, so
+    the loader and every library match. Returns the names copied.
+    """
+    libc = all_deps.get("libc.so.6")
+    if not libc:
+        print("!! libc.so.6 not found in the scan; glibc not bundled",
+              file=sys.stderr)
+        return []
+    source = os.path.dirname(libc)
+    loaders = sorted(n for n in os.listdir(source)
+                     if n.startswith("ld-linux") and ".so." in n)
+    names = set(GLIBC_SET) | set(loaders)
+    names |= {n for n in all_deps if n.startswith(GLIBC)
+              and os.path.dirname(all_deps[n]) == source}
+    os.makedirs(GLIBC_OUT, exist_ok=True)
+    copied = []
+    for name in sorted(names):
+        path = os.path.join(source, name)
+        if not os.path.exists(path):
+            continue
+        dest = os.path.join(GLIBC_OUT, name)
+        shutil.copy2(os.path.realpath(path), dest)
+        if name.startswith("ld-linux"):
+            os.chmod(dest, 0o755)
+        copied.append(name)
+    if not any(n.startswith("ld-linux") for n in copied):
+        print(f"!! no ld-linux loader in {source}; glibc not bundled",
+              file=sys.stderr)
+        shutil.rmtree(GLIBC_OUT)
+        return []
+    return copied
+
+
+def kernel_needed(libc):
+    """The oldest kernel the bundled glibc runs on ("3.2.0"), or None.
+
+    Read from libc's ABI note (readelf -n: "OS: Linux, ABI: 3.2.0").
+    """
+    try:
+        out = subprocess.run(["readelf", "-n", libc], capture_output=True,
+                             text=True, timeout=20).stdout
+    except Exception:
+        return None
+    m = re.search(r"OS: Linux, ABI: (\d+\.\d+\.\d+)", out)
+    return m.group(1) if m else None
+
+
+def _dynamic_symbols(path):
+    """(imported, defined) dynamic symbol names of one ELF file."""
+    try:
+        out = subprocess.run(["objdump", "-T", path], capture_output=True,
+                             text=True, timeout=30).stdout
+    except Exception:
+        return set(), set()
+    imported, defined = set(), set()
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) < 4 or not re.match(r"[0-9a-f]{8,}$", parts[0]):
+            continue
+        name = parts[-1]
+        if "*UND*" in parts:
+            imported.add(name)
+        elif ".text" in parts or ".data" in parts or ".bss" in parts \
+                or ".rodata" in parts:
+            defined.add(name)
+    return imported, defined
+
+
+def write_fallback_symbols(seeds):
+    """What the bundle uses from each fallback library (task 185).
+
+    With glibc bundled, an older system copy of an excludelist library
+    is the next thing that stops the app: Ubuntu 22.04's libgpg-error
+    lacks gpgrt_add_post_log_func, which the bundled libgcrypt needs, and
+    libmpv failed to load. fallback/<soname>/symbols lists the names the
+    bundle takes from that library; AppRun uses the bundled copy where
+    the system's has not got them all.
+    """
+    importers = {p for p in set(seeds) | set(find_elf_files(LIB_OUT))
+                 if not p.startswith((FALLBACK_OUT + os.sep,
+                                      GLIBC_OUT + os.sep))}
+    wanted = set()
+    for path in importers:
+        wanted |= _dynamic_symbols(path)[0]
+    if not os.path.isdir(FALLBACK_OUT):
+        return
+    for soname in sorted(os.listdir(FALLBACK_OUT)):
+        lib = os.path.join(FALLBACK_OUT, soname, soname)
+        if not os.path.isfile(lib):
+            continue
+        # Byte order, as AppRun's `LC_ALL=C comm` wants it.
+        used = sorted(wanted & _dynamic_symbols(lib)[1],
+                      key=lambda name: name.encode())
+        with open(os.path.join(FALLBACK_OUT, soname, "symbols"), "w") as f:
+            f.write("".join(name + "\n" for name in used))
+
+
 def _version_key(tag):
     return tuple(int(x) for x in re.findall(r"\d+", tag))
 
@@ -251,7 +373,9 @@ def write_requirements(seeds):
     what the binaries really ask for. Written to fallback/requires for
     AppRun: an older system libstdc++ is swapped for the bundled one,
     and an older glibc gets a plain message instead of a cryptic
-    "version `GLIBC_2.38' not found".
+    "version `GLIBC_2.38' not found". With glibc bundled (task 185) the
+    one thing left to check is the kernel: a "kernel" line says the
+    oldest one the bundled glibc runs on.
     """
     files = set(seeds) | set(find_elf_files(LIB_OUT))
     newest = {}
@@ -278,7 +402,15 @@ def write_requirements(seeds):
     with open(os.path.join(FALLBACK_OUT, "requires"), "w") as f:
         for lib, tag in sorted(newest.items()):
             f.write(f"{lib} {tag}\n")
-    if "libc.so.6" in newest:
+        kernel = None
+        if os.path.exists(os.path.join(GLIBC_OUT, "libc.so.6")):
+            kernel = kernel_needed(os.path.join(GLIBC_OUT, "libc.so.6"))
+        if kernel:
+            f.write(f"kernel {kernel}\n")
+    if kernel:
+        print(f"glibc {newest.get('libc.so.6', 'GLIBC_?')[6:]} travels with "
+              f"this AppImage; it needs Linux {kernel} or newer.")
+    elif "libc.so.6" in newest:
         print(f"This AppImage needs glibc {newest['libc.so.6'][6:]} or newer "
               f"on the system that runs it.")
 

@@ -84,6 +84,12 @@ $realConfig = Join-Path $env:APPDATA "frequencies"
 if (Test-Path $devConfig) { Remove-Item $devConfig -Recurse -Force }
 if (Test-Path $realConfig) {
     Copy-Item $realConfig $devConfig -Recurse
+    # The two publishing tokens are never read by a build tool and must
+    # never travel with a build (build 125): the photo-publish token and
+    # the release token.
+    foreach ($secret in @("github_token.json", "release_token.json")) {
+        Remove-Item (Join-Path $devConfig $secret) -ErrorAction SilentlyContinue
+    }
 } else {
     New-Item -ItemType Directory $devConfig | Out-Null
 }
@@ -116,9 +122,17 @@ if (-not $iscc) {
         Where-Object { Test-Path $_ } | Select-Object -First 1
 }
 $setup = if ($Dev) { "Frequencies-Setup-dev" } else { "Frequencies-Setup" }
+# The build number (src\version.py) goes in the installer's version.
+$build = [regex]::Match((Get-Content src\version.py -Raw), '(?m)^BUILD\s*=\s*(\d+)').Groups[1].Value
 if ($iscc) {
-    & $iscc /Q "/DSetupName=$setup" frequencies.iss
+    & $iscc /Q "/DSetupName=$setup" "/DAppBuild=$build" frequencies.iss
     if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
+    # A note beside it for "Publish this build as an update" (build 125).
+    if ($Dev) {
+        & $py tools\build_info.py "dist\$setup.exe" --dev
+    } else {
+        & $py tools\build_info.py "dist\$setup.exe"
+    }
 } else {
     Write-Host "    Inno Setup isn't installed, so no installer this time."
     Write-Host "    Install it with: winget install -e --id JRSoftware.InnoSetup"

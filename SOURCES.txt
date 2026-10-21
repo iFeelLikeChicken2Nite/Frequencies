@@ -1,0 +1,26 @@
+Where to get the source of what is in this AppImage
+===================================================
+
+Frequencies (the app's own code) is GPL-3.0-or-later. Its source is public:
+
+    https://github.com/iFeelLikeChicken2Nite/Frequencies
+
+The code in the release you have is the one marked with its build number
+(src/version.py has the number).
+
+The libraries bundled beside it come from the Fedora machine that built the
+AppImage and from PyPI. bundled-parts.txt lists each one with its version and
+a source link:
+
+  * Fedora packages: https://src.fedoraproject.org/rpms/<package>
+    (the exact version-release is in the list).
+  * Python packages: https://pypi.org/project/<name>/<version>/
+  * projectM: https://github.com/projectM-visualizer/projectm
+    (the visualizer's presets: https://github.com/projectM-visualizer/presets-cream-of-the-crop)
+  * Qt 5 (the PyQt5-Qt5 and PyQtWebEngine-Qt5 packages):
+    https://download.qt.io/official_releases/qt/5.15/
+    PyQt5: https://pypi.org/project/PyQt5/
+  * AppImage tooling: https://github.com/AppImage/appimagetool
+
+If a link no longer works, open an issue on the Frequencies page above and the
+source will be provided.

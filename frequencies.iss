@@ -9,11 +9,23 @@
 #ifndef SetupName
   #define SetupName "Frequencies-Setup"
 #endif
+#ifndef AppBuild
+  #define AppBuild "0"
+#endif
+
+; Updates (build 125, task 177): the app downloads this installer and runs
+; it as it quits with /VERYSILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS
+; /NORESTARTAPPLICATIONS /UPDATE. /UPDATE waits until no Frequencies.exe
+; holds the "FrequenciesRunning" mutex (the app and its browser helper
+; each hold it) and never starts the app afterwards; /RELAUNCH (an
+; installer that didn't finish, run again at launch) does start it.
+; The AppId never changes, so every build upgrades the same install.
 
 [Setup]
 AppId={{6F1E3C52-9B7A-4D1E-A0C4-5F2B8E7D3A91}
 AppName=Frequencies
-AppVersion=1.5
+AppVersion=1.5.{#AppBuild}
+VersionInfoVersion=1.5.{#AppBuild}.0
 AppPublisher=Frequencies
 DefaultDirName={autopf}\Frequencies
 DefaultGroupName=Frequencies
@@ -48,4 +60,43 @@ Name: "{group}\Uninstall Frequencies"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\Frequencies"; Filename: "{app}\Frequencies.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\Frequencies.exe"; Description: "{cm:LaunchProgram,Frequencies}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Frequencies.exe"; Description: "{cm:LaunchProgram,Frequencies}"; Flags: nowait postinstall skipifsilent; Check: NotUpdate
+Filename: "{app}\Frequencies.exe"; Flags: nowait; Check: Relaunch
+
+[Code]
+function HasSwitch(Name: String): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/' + Name) = 0 then
+      Result := True;
+end;
+
+function NotUpdate: Boolean;
+begin
+  Result := not HasSwitch('UPDATE');
+end;
+
+function Relaunch: Boolean;
+begin
+  Result := HasSwitch('RELAUNCH');
+end;
+
+function InitializeSetup(): Boolean;
+var
+  Waited: Integer;
+begin
+  // An update: wait (up to a minute) for every Frequencies.exe to end.
+  if HasSwitch('UPDATE') then
+  begin
+    Waited := 0;
+    while CheckForMutexes('FrequenciesRunning') and (Waited < 240) do
+    begin
+      Sleep(250);
+      Waited := Waited + 1;
+    end;
+  end;
+  Result := True;
+end;

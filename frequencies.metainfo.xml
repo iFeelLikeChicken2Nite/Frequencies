@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata (build 136, task 195). tools/make_metainfo.py copies
+     this into the AppDir and fills in <releases> from src/version.py and
+     src/whats_new.json. The id is a reverse-DNS name, and inside the AppDir
+     the desktop file and this file are named after it (appimagetool and
+     appstreamcli both want that); the app's own id stays "frequencies"
+     (src/desktopentry.py). -->
+<component type="desktop-application">
+  <id>io.github.ifeellikechicken2nite.Frequencies</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Frequencies</name>
+  <summary>Internet radio with lyrics, artist info and a visualizer</summary>
+  <developer id="io.github.ifeellikechicken2nite">
+    <name>iFeelLikeChicken2Nite</name>
+  </developer>
+  <description>
+    <p>Frequencies is an internet radio player. Save the stations you like as frequencies, sort them with tags, and listen to radio streams, Twitch and your iBroadcast library in one place.</p>
+    <p>While a station plays, Frequencies names the song, shows its lyrics and the artist's picture and biography, and draws a visualizer. It can also schedule live shows, import and share stations, and skin its player like a classic desktop media player.</p>
+  </description>
+  <launchable type="desktop-id">io.github.ifeellikechicken2nite.Frequencies.desktop</launchable>
+  <url type="homepage">https://github.com/iFeelLikeChicken2Nite/frequencies-releases</url>
+  <url type="vcs-browser">https://github.com/iFeelLikeChicken2Nite/Frequencies</url>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>Player</category>
+  </categories>
+  <keywords>
+    <keyword>radio</keyword>
+    <keyword>internet radio</keyword>
+    <keyword>streaming</keyword>
+    <keyword>lyrics</keyword>
+    <keyword>visualizer</keyword>
+  </keywords>
+  <provides>
+    <binary>Frequencies</binary>
+  </provides>
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">intense</content_attribute>
+  </content_rating>
+  <!--RELEASES-->
+</component>

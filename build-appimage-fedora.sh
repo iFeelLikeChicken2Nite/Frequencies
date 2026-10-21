@@ -104,7 +104,15 @@ fi
 
 sudo dnf install -y \
     mpv-libs python3 python3-pip \
-    file desktop-file-utils ImageMagick python3-pillow curl binutils
+    file desktop-file-utils appstream ImageMagick python3-pillow curl binutils
+# Libraries the app loads that the scan can only bundle if they are here
+# (task 185): SDL3, which Fedora's libSDL2 (sdl2-compat, linked by
+# libmpv) loads by name and quits without; and the X11 helpers PyQt5's
+# xcb plugin needs. libxkbcommon-x11 must come from the same release as
+# the bundled libxkbcommon: Ubuntu 22.04's older one crashed Qt at start.
+sudo dnf install -y \
+    SDL3 libxkbcommon-x11 xcb-util-wm xcb-util-image xcb-util-keysyms \
+    xcb-util-renderutil
 
 # Find libmpv, whatever it's called and wherever it lives.
 #
@@ -483,6 +491,17 @@ rm -f "${DEST_STDLIB}/site-packages/PyQt5/Qt5/plugins/imageformats/libqpdf.so" |
 
 # libmpv, resolved near the top of this script under its real soname.
 cp -L "$(readlink -f "${LIBMPV_PATH}")" "AppDir/usr/lib/${LIBMPV_SONAME}"
+# SDL3, beside it (task 185): Fedora's libSDL2 is sdl2-compat, which loads
+# libSDL3.so.0 when libmpv loads and quits the app with "Failed loading
+# SDL3 library." on a system without it. bundle_deps.py brings its
+# libraries.
+for candidate in /usr/lib64/libSDL3.so.0 /usr/lib/libSDL3.so.0; do
+    if [ -e "${candidate}" ]; then
+        cp -L "${candidate}" AppDir/usr/lib/libSDL3.so.0
+        break
+    fi
+done
+[ -e AppDir/usr/lib/libSDL3.so.0 ] || echo "!! SDL3 not found; the AppImage needs it on the system"
 
 # Your talk stations (set in a dev build) into src/, then into the app.
 echo "==> Talk stations from your dev build"
@@ -563,6 +582,16 @@ cp icons/*.png AppDir/usr/share/frequencies/icons/
 cp frequencies.png AppDir/usr/share/frequencies/
 cp AppRun AppDir/AppRun
 chmod +x AppDir/AppRun
+# The build machine's glibc travels with the app (task 185, bundle_deps.py
+# puts it in usr/lib/glibc), and AppRun starts Python through its loader.
+# Programs the app starts again by their path go through it as well:
+# glibc-run, installed under their names, hands them to that loader.
+cp glibc-run AppDir/usr/bin/python3
+chmod +x AppDir/usr/bin/python3
+if [ -n "$(find "${DEST_STDLIB}/site-packages/PyQt5/Qt5/libexec" -name QtWebEngineProcess 2>/dev/null || true)" ]; then
+    cp glibc-run AppDir/usr/bin/QtWebEngineProcess
+    chmod +x AppDir/usr/bin/QtWebEngineProcess
+fi
 
 # The bundled GnuTLS takes its TLS settings from Fedora's crypto-policies
 # file, which other distros don't have; without it every https stream
@@ -574,10 +603,18 @@ if [ -f /etc/crypto-policies/back-ends/gnutls.config ]; then
 else
     printf '[priorities]\nSYSTEM=NORMAL\n' > AppDir/usr/share/frequencies/tls/gnutls.config
 fi
-cp frequencies.desktop AppDir/
-cp frequencies.desktop AppDir/usr/share/applications/
 cp frequencies.png AppDir/
 cp frequencies.png AppDir/usr/share/icons/hicolor/256x256/apps/
+
+# The AppImage distribution guide (task 195): the desktop file must be
+# valid, AppStream metadata goes in usr/share/metainfo (appimagetool checks
+# it below), and the licenses travel with the app in usr/share/doc.
+echo "==> Desktop file and AppStream metadata"
+desktop-file-validate frequencies.desktop
+# Also copies the desktop file in, under the AppStream id.
+python3 tools/make_metainfo.py AppDir
+mkdir -p AppDir/usr/share/doc/frequencies
+cp LICENSE THIRD-PARTY.md SOURCES.txt AppDir/usr/share/doc/frequencies/
 
 # --------------------------------------------------------------------
 # projectM goes in BEFORE the dependency scan.
@@ -604,6 +641,13 @@ fi
 python3 bundle_deps.py
 
 # --------------------------------------------------------------------
+# The license of every bundled library and Python package, made last so it
+# sees the finished AppDir (it asks rpm on this machine who owns each one).
+echo "==> Licenses of the bundled parts"
+python3 tools/gather_licenses.py AppDir --site-packages "${VENV_SP}" \
+    --projectm-src projectm-src --projectm-version "${PROJECTM_VERSION#v}" \
+    || echo "    (could not list the licenses; the AppImage still builds)"
+
 echo "==> Downloading appimagetool"
 TOOL="appimagetool-${APP_ARCH}"
 if [ ! -f "${TOOL}" ]; then
@@ -630,7 +674,15 @@ else
 fi
 
 echo "==> Building AppImage"
-ARCH="${APP_ARCH}" "${TOOL_CMD}" --no-appstream AppDir "${OUTPUT}"
+ARCH="${APP_ARCH}" "${TOOL_CMD}" AppDir "${OUTPUT}"
+
+# A note beside it for "Publish this build as an update" (build 125):
+# build number, checksum, and whether your dev picks shipped.
+if [ "${DEV_BUILD}" = 1 ]; then
+    python3 tools/build_info.py "${OUTPUT}" --dev
+else
+    python3 tools/build_info.py "${OUTPUT}"
+fi
 
 echo "==> Done: ./${OUTPUT}"
 if [ -f photo-pack/photo-pack.json ]; then

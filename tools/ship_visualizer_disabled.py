@@ -10,7 +10,9 @@ Run by build-appimage-fedora.sh before it copies src/ into the AppImage:
 
 Only the file names are shipped, because the preset folder sits somewhere
 else on every machine. Nothing else from settings.json is read. Your list
-is empty or missing (a new machine): src/ is left as it is.
+is empty or missing (a new machine, or the Windows PC): the list you
+published with "Publish my visualizer list to GitHub" is shipped
+(build 125); with neither, src/ is left as it is.
 
 Stand-alone on purpose (no app imports): it runs inside the build box.
 """
@@ -46,12 +48,45 @@ def read_json(path):
         return None
 
 
+def published():
+    """The names in the published visualizer-list.json, or []."""
+    import urllib.parse
+    import urllib.request
+    here = os.path.join(HERE, "src", "photo_pack.json")
+    address = ""
+    for path in (os.path.join(config_dir(), "photo_pack.json"), here):
+        data = read_json(path)
+        if isinstance(data, dict) and str(data.get("pack") or "").strip():
+            address = str(data["pack"]).strip()
+            break
+    if not address:
+        return []
+    url = urllib.parse.urljoin(address, "visualizer-list.json")
+    try:
+        request = urllib.request.Request(
+            url, headers={"User-Agent": "Frequencies build"})
+        with urllib.request.urlopen(request, timeout=20) as answer:
+            data = json.loads(answer.read().decode("utf-8"))
+    except (OSError, ValueError):
+        return []
+    presets = data.get("presets") if isinstance(data, dict) else None
+    return sorted({os.path.basename(str(n)) for n in presets or ()
+                   if str(n).strip()})
+
+
 def main(argv):
     settings = read_json(os.path.join(config_dir(), "settings.json"))
     paths = settings.get("visualizer_disabled") if isinstance(
         settings, dict) else None
     names = sorted({os.path.basename(str(p)) for p in paths or ()
                     if str(p).strip()})
+    if not names:
+        # Build 125: a PC whose dev build never turned presets off (the
+        # Windows one) ships the list published with "Publish my
+        # visualizer list to GitHub", so its builds carry the same list.
+        names = published()
+        if names:
+            print("    (your published visualizer list)")
     if not names:
         old = read_json(SHIPPED)
         have = len(old.get("presets") or ()) if isinstance(old, dict) else 0

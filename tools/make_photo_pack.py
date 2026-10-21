@@ -13,7 +13,8 @@ Run by build-appimage-fedora.sh after tools/ship_talk_stations.py:
   this writes            src/artist_overrides.json  your text fixes (bio,
                                                     name, genres, mbid,
                                                     Wikipedia) - no photos
-                         src/photo_pack.json        the two addresses
+                         src/photo_pack.json        the addresses (pack,
+                                                    reports, art)
                          photo-pack/frequencies-photo-pack.b32
                          photo-pack/photo-pack.json
                          photo-pack/bio-fixes.json  your text fixes, which
@@ -91,7 +92,8 @@ def slug(text):
 
 def ship_addresses():
     own = read(os.path.join(config_dir(), "photo_pack.json")) or {}
-    own = {k: str(own.get(k) or "").strip() for k in ("pack", "reports")}
+    own = {k: str(own.get(k) or "").strip()
+           for k in ("pack", "reports", "art")}
     own = {k: v for k, v in own.items() if v}
     if not own:
         have = read(SHIPPED_ADDRESS) or {}
@@ -103,6 +105,8 @@ def ship_addresses():
     print("    pack address: " + own.get("pack", "(none)"))
     print("    report address: " + ("set" if own.get("reports")
                                     else "(none: thumbs down uses the pack address's repository)"))
+    print("    picture link address: " + (own.get("art") or "(none: shared "
+                                          "pictures of your own travel as thumbnails)"))
 
 
 def ship_text(dev):

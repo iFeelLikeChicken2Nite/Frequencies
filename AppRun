@@ -46,6 +46,11 @@ fi
 # on LD_LIBRARY_PATH, so grep and ldconfig here are the system's, using
 # the system's libraries; the folders added here end up after them.
 FALLBACK="${HERE}/usr/lib/fallback"
+FALLBACK_PATH=""
+LOADER=""
+for candidate in "${HERE}"/usr/lib/glibc/ld-linux*.so.*; do
+    if [ -x "${candidate}" ]; then LOADER="${candidate}"; break; fi
+done
 if [ -d "${FALLBACK}" ]; then
     # Where the system keeps its libraries, read once: ldconfig's cache
     # when there is an ldconfig (Debian keeps it in /sbin, outside a
@@ -90,13 +95,31 @@ if [ -d "${FALLBACK}" ]; then
         return 1
     }
 
-    # glibc can't be bundled: too old means this system can't run it,
-    # and that is better said plainly than as a linker error.
-    NEED_GLIBC="$(needed_tag libc.so.6 || true)"
-    HOST_LIBC="$(system_lib libc.so.6 || true)"
-    if [ -n "${NEED_GLIBC}" ] && [ -n "${HOST_LIBC}" ] && \
-            ! grep -qaF "${NEED_GLIBC}" "${HOST_LIBC}"; then
-        MSG="Frequencies needs a newer Linux than this one: it needs glibc ${NEED_GLIBC#GLIBC_} or newer, and this system has an older one. Updating to your distribution's current release will let it run."
+    # glibc travels with the app (task 185): usr/lib/glibc holds the
+    # build machine's copy, and the app starts through its own loader
+    # (see the end of this file), so an older system glibc is fine -
+    # SteamOS 3.8 has 2.41, Ubuntu 22.04 2.35, the build 2.43. What
+    # can't travel is the kernel, so that is the one thing checked.
+    # A build without the folder keeps the old check: there, too old a
+    # glibc means this system can't run it, better said plainly than as
+    # a linker error.
+    if [ -n "${LOADER}" ]; then
+        NEED_KERNEL="$(needed_tag kernel || true)"
+        HOST_KERNEL="$(uname -r 2>/dev/null || true)"
+        HOST_KERNEL="${HOST_KERNEL%%[!0-9.]*}"
+        if [ -n "${NEED_KERNEL}" ] && [ -n "${HOST_KERNEL}" ] && \
+                [ "$(printf '%s\n%s\n' "${NEED_KERNEL}" "${HOST_KERNEL}" | sort -V | head -n 1)" != "${NEED_KERNEL}" ]; then
+            MSG="Frequencies needs a newer Linux kernel than this one: it needs Linux ${NEED_KERNEL} or newer, and this system has ${HOST_KERNEL}."
+        fi
+    else
+        NEED_GLIBC="$(needed_tag libc.so.6 || true)"
+        HOST_LIBC="$(system_lib libc.so.6 || true)"
+        if [ -n "${NEED_GLIBC}" ] && [ -n "${HOST_LIBC}" ] && \
+                ! grep -qaF "${NEED_GLIBC}" "${HOST_LIBC}"; then
+            MSG="Frequencies needs a newer Linux than this one: it needs glibc ${NEED_GLIBC#GLIBC_} or newer, and this system has an older one. Updating to your distribution's current release will let it run."
+        fi
+    fi
+    if [ -n "${MSG:-}" ]; then
         echo "${MSG}" >&2
         if command -v zenity >/dev/null 2>&1; then
             zenity --error --title=Frequencies --text="${MSG}" 2>/dev/null || true
@@ -118,9 +141,26 @@ if [ -d "${FALLBACK}" ]; then
             if [ -n "${tag}" ] && ! grep -qaF "${tag}" "${host}"; then
                 use=1
             fi
+            # Or a system copy too old for the bundle (task 185): the
+            # names the bundle takes from it (bundle_deps.py) must all
+            # be in it. Ubuntu 22.04's libgpg-error lacks one the
+            # bundled libgcrypt needs, and libmpv wouldn't load.
+            # One grep finds most of them; a name it printed only as
+            # part of a longer one ("compress" in "uncompress") is then
+            # looked for on its own.
+            syms="${dir}symbols"
+            if [ "${use}" = 0 ] && [ -s "${syms}" ]; then
+                while IFS= read -r sym; do
+                    if ! grep -qaF -- "${sym}" "${host}"; then
+                        use=1
+                        break
+                    fi
+                done <<< "$(grep -aoFf "${syms}" "${host}" | LC_ALL=C sort -u \
+                            | LC_ALL=C comm -13 - "${syms}")"
+            fi
         fi
         if [ "${use}" = 1 ]; then
-            export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+${LD_LIBRARY_PATH}:}${dir%/}"
+            FALLBACK_PATH="${FALLBACK_PATH:+${FALLBACK_PATH}:}${dir%/}"
             FREQ_FALLBACK_LIBS="${FREQ_FALLBACK_LIBS:+${FREQ_FALLBACK_LIBS} }${soname}"
         fi
     done
@@ -137,10 +177,25 @@ fi
 # in usr/lib, this ordering means PyQt5's still wins, instead of the app
 # dying with "undefined symbol: _ZdlPvm, version Qt_5".
 QT_LIB_DIR="${PY_STDLIB}/site-packages/PyQt5/Qt5/lib"
+BUNDLE_PATH="${HERE}/usr/lib"
 if [ -d "${QT_LIB_DIR}" ]; then
-    export LD_LIBRARY_PATH="${QT_LIB_DIR}:${HERE}/usr/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+    BUNDLE_PATH="${QT_LIB_DIR}:${BUNDLE_PATH}"
+fi
+# The fallback folders come after the bundle and anything the caller set.
+LIB_PATH="${BUNDLE_PATH}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}${FALLBACK_PATH:+:${FALLBACK_PATH}}"
+if [ -n "${LOADER}" ]; then
+    # With glibc bundled the path goes to the bundled loader only (see
+    # glibc-run), never on LD_LIBRARY_PATH: a system program the app
+    # starts - xdg-open's shell, a browser, pw-record - would pick up
+    # libraries built for the newer glibc and fail to start (task 185).
+    # The bundled glibc comes first, so it is the one every library in
+    # this process uses.
+    export FREQ_LOADER="${LOADER}"
+    export FREQ_LIBRARY_PATH="$(dirname "${LOADER}"):${LIB_PATH}"
+    SYSTEM_GLIBC="$(getconf GNU_LIBC_VERSION 2>/dev/null || true)"
+    export FREQ_GLIBC="bundled ${LOADER##*/}, system ${SYSTEM_GLIBC:-unknown}"
 else
-    export LD_LIBRARY_PATH="${HERE}/usr/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+    export LD_LIBRARY_PATH="${LIB_PATH}"
 fi
 
 # Globbed, not named: libmpv's soname has moved once already (0.35
@@ -204,6 +259,10 @@ export PYTHONDONTWRITEBYTECODE=1
 QTWE_DIR="${PY_STDLIB}/site-packages/PyQt5/Qt5"
 if [ -x "${QTWE_DIR}/libexec/QtWebEngineProcess" ]; then
     export QTWEBENGINEPROCESS_PATH="${QTWE_DIR}/libexec/QtWebEngineProcess"
+    # Through the bundled glibc too (glibc-run, task 185).
+    if [ -n "${LOADER}" ] && [ -x "${HERE}/usr/bin/QtWebEngineProcess" ]; then
+        export QTWEBENGINEPROCESS_PATH="${HERE}/usr/bin/QtWebEngineProcess"
+    fi
     export QTWEBENGINE_RESOURCES_PATH="${QTWE_DIR}/resources"
     export QT_WEBENGINE_LOCALES_PATH="${QTWE_DIR}/translations/qtwebengine_locales"
     # Chromium's own sandbox needs either a setuid helper or user
@@ -249,10 +308,19 @@ fi
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/frequencies"
 mkdir -p "${LOG_DIR}" 2>/dev/null || true
 
+# With glibc bundled, Python starts through the bundled loader, named
+# after usr/bin/python3 (glibc-run) so that is what sys.executable says:
+# the browser helper the app starts by it goes the same way (task 185).
+RUN=("${PY_BIN}")
+if [ -n "${LOADER}" ] && [ -x "${HERE}/usr/bin/python3" ]; then
+    RUN=("${LOADER}" --library-path "${FREQ_LIBRARY_PATH}"
+         --argv0 "${HERE}/usr/bin/python3" "${PY_BIN}")
+fi
+
 if [ -w "${LOG_DIR}" ]; then
-    exec "${PY_BIN}" \
+    exec "${RUN[@]}" \
         "${HERE}/usr/share/frequencies/main.py" "$@" 2>&1 \
         | tee -a "${LOG_DIR}/frequencies-stderr.log"
 else
-    exec "${PY_BIN}" "${HERE}/usr/share/frequencies/main.py" "$@"
+    exec "${RUN[@]}" "${HERE}/usr/share/frequencies/main.py" "$@"
 fi

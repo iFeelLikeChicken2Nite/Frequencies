@@ -1,0 +1,37 @@
+#!/bin/sh
+# glibc-run - starts one of the app's own programs through the glibc
+# that travels with the app (task 185).
+#
+# The AppImage carries the build machine's glibc in usr/lib/glibc, and
+# AppRun starts Python through that copy's loader, so an older system
+# glibc (SteamOS 3.8, Ubuntu 22.04) no longer stops the app. A program
+# the app starts again by its path - Python for the browser helper,
+# Chromium's QtWebEngineProcess - would otherwise get the system's
+# loader and fail the same way. The build installs this file under
+# their names (usr/bin/python3, usr/bin/QtWebEngineProcess), and it
+# hands each one to the bundled loader.
+#
+# The loader and its library path come from AppRun as FREQ_LOADER and
+# FREQ_LIBRARY_PATH. Nothing goes on LD_LIBRARY_PATH, so programs from
+# the system (xdg-open, a browser, pw-record) never see the bundle.
+here="$(dirname "$(readlink -f "$0")")"
+real=""
+case "${0##*/}" in
+    python3)
+        for candidate in "${here}"/python3.*; do
+            if [ -x "${candidate}" ]; then real="${candidate}"; break; fi
+        done ;;
+    QtWebEngineProcess)
+        for candidate in "${here}"/../lib*/python3.*/site-packages/PyQt5/Qt5/libexec/QtWebEngineProcess; do
+            if [ -x "${candidate}" ]; then real="${candidate}"; break; fi
+        done ;;
+esac
+if [ -z "${real}" ]; then
+    echo "glibc-run: nothing to start for ${0##*/}" >&2
+    exit 127
+fi
+if [ -n "${FREQ_LOADER:-}" ] && [ -x "${FREQ_LOADER}" ]; then
+    exec "${FREQ_LOADER}" --library-path "${FREQ_LIBRARY_PATH:-}" \
+        --argv0 "$0" "${real}" "$@"
+fi
+exec "${real}" "$@"
