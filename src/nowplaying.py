@@ -884,10 +884,10 @@ class NowPlaying(QWidget):
 
     def set_artist(self, name, biography="", photo=None):
         self.artist_name.setText(name or "")
-        self.refresh_logo()
         self.artist_bio.setText(biography or "")
         self._artist_pixmap = photo
         self._lay_artist_photo()
+        self.refresh_logo()
         self._artist_col.setVisible(bool(name and biography))
 
     def refresh_logo(self):
@@ -895,7 +895,10 @@ class NowPlaying(QWidget):
         import bandlogo
         name = self.artist_name.text()
         info = bandlogo.find(name)
-        self.artist_logo.set_logo(info, name)
+        # The logo only while the artist's picture is up (build 143,
+        # task 206); until then the logo's own space shows the name.
+        self.artist_logo.set_logo(
+            info, name, show=self.artist_photo.has_photo())
         self.artist_name.setVisible(info is None)
 
     def _lay_artist_photo(self):

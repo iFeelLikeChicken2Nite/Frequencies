@@ -1609,6 +1609,7 @@ class ArtistHeader(QWidget):
         # The band's logo in place of the name (build 141, task 203).
         from bandlogo import LogoMark
         self.logo = LogoMark(self)
+        self.logo.fade.changed.connect(self._name_fade)
         self._art = QPixmap()
 
     def set_tone(self, colour):
@@ -1741,6 +1742,8 @@ class ArtistHeader(QWidget):
 
     def set_photo(self, pixmap):
         self._art = pixmap if pixmap is not None else QPixmap()
+        if hasattr(self, "logo"):
+            self.refresh_logo(layout=False)
         # The header keeps its height either way: with no photograph the
         # tower stands there instead, so the panel does not jump every
         # time a lookup fails.
@@ -1764,14 +1767,32 @@ class ArtistHeader(QWidget):
         import bandlogo
         text = self.name.text()
         info = bandlogo.find(text)
-        self.logo.set_logo(info, self._tone or T["bg1"])
-        self.name.setVisible(info is None)
+        # The logo only while the artist's picture is up; the antenna
+        # means plain text (build 143, task 206).
+        self._logo_info = info
+        self.logo.set_logo(info, self._tone or T["bg1"],
+                           show=not self._art.isNull())
+        self._name_fade()
         tip = text if info is not None else ""
         for widget in (self, self.photo, self.tower):
             widget.setToolTip(tip)
         self.logo.setAccessibleName(tip)
         if layout:
             self._layout()
+
+    def _name_fade(self, *_):
+        """The plain name takes the logo's place as it fades out."""
+        from PyQt5.QtWidgets import QGraphicsOpacityEffect
+        v = self.logo.fade.value if getattr(self, "_logo_info", None) else 0.0
+        self.name.setVisible(v < 1.0 and bool(self.name.text()))
+        if v <= 0.0:
+            self.name.setGraphicsEffect(None)
+        else:
+            eff = self.name.graphicsEffect()
+            if not isinstance(eff, QGraphicsOpacityEffect):
+                eff = QGraphicsOpacityEffect(self.name)
+                self.name.setGraphicsEffect(eff)
+            eff.setOpacity(1.0 - v)
 
     def resizeEvent(self, e):
         super().resizeEvent(e)

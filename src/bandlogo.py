@@ -23,8 +23,9 @@ tone is drawn around it.
 import os
 import shutil
 
-from PyQt5.QtCore import QPointF, QRectF, QSize, Qt, pyqtSignal
-from PyQt5.QtGui import QColor, QImage, QPainter, QPixmap
+from PyQt5.QtCore import (QEasingCurve, QObject, QPointF, QRectF, QSize, Qt,
+                          QTimer, QVariantAnimation, pyqtSignal)
+from PyQt5.QtGui import QColor, QFont, QImage, QPainter, QPixmap
 from PyQt5.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox,
                              QGridLayout, QLabel, QPushButton, QSizePolicy,
                              QSlider, QVBoxLayout, QWidget)
@@ -271,6 +272,87 @@ def draw(painter, rect, path, tone):
         painter.drawPixmap(QPointF(rect.left(), rect.top()), pm)
 
 
+# -- the fade (build 143, task 206) ---------------------------------------------
+
+FADE_MS = 350               # one fade
+SLIDE_PX = 16               # how far the logo travels while it fades
+SETTLE_MS = 120             # a change must hold this long before it moves
+
+
+class Fade(QObject):
+    """The logo's state: 1 = shown, 0 = gone.
+
+    It follows `want` (a logo exists AND the artist's picture is on screen,
+    i.e. the antenna is not). Coming in, it fades up while sliding up;
+    going out, it fades while sliding down. A change that flips back
+    within SETTLE_MS (a lookup clearing and refilling for the same artist)
+    never starts a move, so the logo does not flicker between songs.
+    """
+
+    changed = pyqtSignal(float)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.value = 0.0
+        self._want = False
+        self._key = None
+        self._anim = None
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.setInterval(SETTLE_MS)
+        self._timer.timeout.connect(self._go)
+
+    def _step(self, v):
+        self.value = float(v)
+        self.changed.emit(self.value)
+
+    def _go(self):
+        self._stop()
+        end = 1.0 if self._want else 0.0
+        if abs(self.value - end) < 0.001:
+            return
+        # A fresh animation each time: one restarted from its end jumps.
+        anim = QVariantAnimation(self)
+        anim.setDuration(FADE_MS)
+        anim.setEasingCurve(QEasingCurve.OutCubic)
+        anim.setStartValue(float(self.value))
+        anim.setEndValue(end)
+        anim.valueChanged.connect(self._step)
+        self._anim = anim
+        anim.start(QVariantAnimation.DeleteWhenStopped)
+
+    def _stop(self):
+        if self._anim is not None:
+            try:
+                self._anim.valueChanged.disconnect(self._step)
+                self._anim.stop()
+            except RuntimeError:        # already deleted
+                pass
+            self._anim = None
+
+    def snap(self, value):
+        self._timer.stop()
+        self._stop()
+        self.value = float(value)
+        self.changed.emit(self.value)
+
+    def follow(self, want, key=None, animate=True):
+        """`key` names the logo (its file). A different logo starts over."""
+        want = bool(want)
+        if key != self._key:
+            self._key = key
+            if self.value > 0 or self._want:
+                self.snap(0.0)          # another artist: out, then in
+                self._want = False
+        if want == self._want:
+            return
+        self._want = want
+        if not animate:
+            self.snap(1.0 if want else 0.0)
+            return
+        self._timer.start()
+
+
 def header_box(width, height):
     """The logo's area in the artist photo's band: where the name sits,
     taller."""
@@ -288,17 +370,25 @@ class LogoMark(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.info = None
         self.tone = "#000000"
+        self.fade = Fade(self)
+        self.fade.changed.connect(self._moved)
         self.hide()
 
-    def set_logo(self, info, tone=None):
+    def set_logo(self, info, tone=None, show=True):
+        """`show`: the artist's picture is up (no antenna)."""
         self.info = info
         if tone:
             self.tone = tone
-        self.setVisible(info is not None)
+        self.fade.follow(info is not None and show,
+                         info["path"] if info else None)
+        self._moved()
+
+    def _moved(self, *_):
+        self.setVisible(self.info is not None and self.fade.value > 0)
         self.update()
 
     def paintEvent(self, _e):
-        if not self.info:
+        if not self.info or self.fade.value <= 0:
             return
         img = image(self.info["path"])
         bounds = QRectF(self.rect()).adjusted(4, 4, -4, -4)
@@ -307,6 +397,8 @@ class LogoMark(QWidget):
                      bounds)
         p = QPainter(self)
         p.setRenderHint(QPainter.SmoothPixmapTransform)
+        p.setOpacity(self.fade.value)
+        p.translate(0, (1.0 - self.fade.value) * SLIDE_PX)
         draw(p, rect, self.info["path"], self.tone)
         p.end()
 
@@ -321,13 +413,21 @@ class LogoName(QWidget):
         super().__init__(parent)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.info = None
+        self.name = ""
+        self.fade = Fade(self)
+        self.fade.changed.connect(lambda *_: self.update())
         policy = QSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         policy.setHeightForWidth(True)
         self.setSizePolicy(policy)
         self.hide()
 
-    def set_logo(self, info, name=""):
+    def set_logo(self, info, name="", show=True):
+        """`show`: the artist's picture is up. Without it the plain name
+        stays here, in the logo's own space, so nothing jumps."""
         self.info = info
+        self.name = name or ""
+        self.fade.follow(info is not None and show,
+                         info["path"] if info else None)
         self.setToolTip(name if info else "")
         self.setAccessibleName(name if info else "")
         self.setVisible(info is not None)
@@ -365,7 +465,20 @@ class LogoName(QWidget):
         rect.moveTop(0)
         p = QPainter(self)
         p.setRenderHint(QPainter.SmoothPixmapTransform)
-        draw(p, rect, self.info["path"], self.TONE)
+        v = self.fade.value
+        if v < 1.0 and self.name:
+            font = QFont(self.font())
+            font.setPixelSize(22)
+            p.setFont(font)
+            p.setPen(QColor(255, 255, 255))
+            p.setOpacity(1.0 - v)
+            p.drawText(QRectF(0, 0, self.width(), self.height()),
+                       int(Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap),
+                       self.name)
+        if v > 0:
+            p.setOpacity(v)
+            p.translate(0, (1.0 - v) * SLIDE_PX)
+            draw(p, rect, self.info["path"], self.TONE)
         p.end()
 
 
