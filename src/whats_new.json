@@ -1,4 +1,14 @@
 {
+  "142": [
+    "Your theme and the artist photo pack switch now stay as you set them, even with two copies of Frequencies open at once. Restoring a backup now keeps this computer's theme, photo pack and band logo choices."
+  ],
+  "141": [
+    "Band logos: some artists now show their logo in place of their name, in the artist panel and in Comfort View. To see names as plain text, switch off Settings > Lyrics and artists > \"Show band logos in place of plain text\"."
+  ],
+  "140": [
+    "The full-screen view is now called Comfort View.",
+    "Comfort View fits any window size: the cover, lyrics and artist panel all stay in view, the artist panel no longer scrolls sideways, and a long biography only scrolls up and down."
+  ],
   "139": [
     "New installs now start with an updated set of 13 default stations."
   ],

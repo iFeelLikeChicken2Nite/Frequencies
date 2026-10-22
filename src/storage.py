@@ -21,6 +21,7 @@ import os
 import random
 import re
 import shutil
+import threading
 import time
 import uuid
 
@@ -292,6 +293,9 @@ READOUT_SOURCES = ("auto", "auto_stream", "custom", "shazam", "stream")
 SORT_MODES = ("manual", "alphabetical", "added", "played", "play_count")
 
 SETTINGS_DEFAULTS = {
+    # Band logos in place of artists' names (build 141, task 203): on
+    # without asking; Settings > Lyrics and artists switches them off.
+    "band_logos": True,
     # 13, not 20. Lyrics sit in a narrow column beside a biography; at
     # 20 a single line wrapped three times and four lines filled the
     # panel.
@@ -609,7 +613,11 @@ def _normalize_station(s):
 
 
 def _atomic_write_json(path, payload):
-    tmp = path + ".tmp"
+    # A temp name of its own per process and thread (task 204): with one
+    # shared "settings.json.tmp", two copies of the app saving at once
+    # could put a half-written file in place, and the next start read
+    # it as "no settings".
+    tmp = f"{path}.{os.getpid()}-{threading.get_ident()}.tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
     os.replace(tmp, path)
@@ -641,28 +649,197 @@ def save_stations(stations):
 # ----------------------------------------------------------------------
 # Settings
 # ----------------------------------------------------------------------
-def load_settings():
+# What settings.json held when this app last read or wrote it (build 142,
+# tasks 204/205). A save writes only the keys this app changed since then
+# and takes every other key from the file as it is now, so another copy
+# of Frequencies running at the same time (the dev and the user build
+# share one settings folder, or the app started a second time from the
+# launcher while the first sat in the tray) can no longer put back an old
+# theme or switch the photo pack off by saving its stale copy.
+_seen = {}
+_save_lock = threading.RLock()
+# Logged whenever they change, with what changed them.
+WATCHED_SETTINGS = ("photo_pack", "theme", "band_logos")
+_MISSING = object()
+
+
+def _plain(value):
+    """A deep copy as JSON would store it, so lists changed in place and
+    tuples compare the same way the file does."""
+    return json.loads(json.dumps(value, ensure_ascii=False))
+
+
+def _settings_log(text):
+    try:
+        import crashlog
+        crashlog.write("[settings] " + text)
+    except Exception:                           # noqa: BLE001
+        pass
+
+
+def _who():
+    """Where a save came from, for the [settings] line: the nearest
+    three callers outside this file and the Library wrapper."""
+    import traceback
+    names = []
+    for frame in reversed(traceback.extract_stack()[:-1]):
+        base = os.path.basename(frame.filename)
+        if base in ("storage.py", "bridge.py") and frame.name in (
+                "save_settings", "_who", "_log_watched", "_save_merged"):
+            continue
+        names.append(f"{base}:{frame.lineno} {frame.name}")
+        if len(names) == 3:
+            break
+    return " ← ".join(names) or "unknown"
+
+
+def _read_settings_file(path):
+    """The saved settings as a dict ({} when there are none).
+
+    A file that can't be read is kept as settings.json.broken and the
+    copy taken at the last good start (settings.json.bak) is used, so a
+    damaged file no longer means "start from the defaults" (photo pack
+    off, the OG theme) and then saving those over everything."""
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+        raise ValueError("not a settings table")
+    except (ValueError, OSError) as exc:
+        problem = exc
+    try:
+        shutil.copyfile(path, path + ".broken")
+    except OSError:
+        pass
+    backup = path + ".bak"
+    try:
+        with open(backup, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            _settings_log(f"settings.json couldn't be read ({problem}); "
+                          "kept it as settings.json.broken and used the "
+                          "copy from the last good start")
+            return data
+    except (ValueError, OSError):
+        pass
+    _settings_log(f"settings.json couldn't be read ({problem}) and there "
+                  "is no good copy; kept it as settings.json.broken, "
+                  "starting from the defaults")
+    return {}
+
+
+def load_settings(remember=True):
+    """The settings. remember=False for a one-off read (an export) that
+    must not change what the running app believes is on disk."""
     settings = dict(SETTINGS_DEFAULTS)
     path = settings_path()
-    if os.path.exists(path):
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if isinstance(data, dict):
-                settings.update(data)
-        except (json.JSONDecodeError, OSError):
-            pass
+    data = _read_settings_file(path)
+    settings.update(data)
     # Volume used to allow up to 130; the app is capped at 100 now, so
     # clamp anything left over from an older settings file.
     try:
         settings["volume"] = max(0, min(100, int(settings.get("volume", 80))))
     except (TypeError, ValueError):
         settings["volume"] = 80
+    if remember:
+        with _save_lock:
+            _seen.clear()
+            _seen.update(_plain(settings))
+        if data:
+            try:
+                _atomic_write_json(path + ".bak", data)
+            except OSError:
+                pass
+        _settings_log(
+            f"loaded: theme '{settings.get('theme')}', photo pack "
+            f"{'on' if settings.get('photo_pack') else 'off'}, band logos "
+            f"{'on' if settings.get('band_logos', True) else 'off'}")
     return settings
 
 
 def save_settings(settings):
-    _atomic_write_json(settings_path(), settings)
+    """Write the settings, keeping what another copy of the app saved
+    meanwhile for every key this one hasn't changed (see _seen)."""
+    with _save_lock:
+        _save_merged(settings)
+
+
+def _save_merged(settings):
+    path = settings_path()
+    disk = {}
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                read = json.load(f)
+            if isinstance(read, dict):
+                disk = read
+        except (ValueError, OSError):
+            disk = {}
+    mine = _plain(settings)
+    out = dict(disk)
+    theirs = {}
+    for key, value in mine.items():
+        before = _seen.get(key, _MISSING)
+        if value != before or key not in disk:
+            out[key] = value                    # this app changed it
+        elif disk[key] != value:
+            theirs[key] = disk[key]             # another copy changed it
+    for key in _seen:
+        if key not in mine:                     # this app removed it
+            out.pop(key, None)
+    for key, value in disk.items():
+        if key not in mine and key not in _seen:
+            theirs[key] = value                 # another copy added it
+    _log_watched(mine, theirs)
+    _atomic_write_json(path, out)
+    # The other copy's changes come into this one too, or its next save
+    # would count them as changes of its own.
+    for key, value in theirs.items():
+        settings[key] = _plain(value)
+    _seen.clear()
+    _seen.update(_plain(out))
+
+
+def _log_watched(mine, theirs):
+    for key in WATCHED_SETTINGS:
+        before = _seen.get(key, _MISSING)
+        if key in theirs:
+            _settings_log(
+                f"{key}: {_shown(mine.get(key, _MISSING))} → "
+                f"{_shown(theirs[key])}, saved by another copy of "
+                "Frequencies running at the same time; kept")
+        elif key in mine and mine[key] != before:
+            _settings_log(f"{key}: {_shown(before)} → {_shown(mine[key])}, "
+                          f"changed by {_who()}")
+
+
+def _shown(value):
+    return "unset" if value is _MISSING else repr(value)
+
+
+# Choices that belong to this computer rather than the library: a Replace
+# restore keeps them (task 204). A backup made in the dev build, or before
+# opting in, used to switch the photo pack off, and the restored theme
+# only showed at the next start.
+LOCAL_SETTINGS = ("photo_pack", "band_logos", "theme",
+                  "update_last_build", "update_checked_at")
+
+
+def keep_local_settings(current, restored):
+    """Put this computer's LOCAL_SETTINGS into a restored settings dict."""
+    for key in LOCAL_SETTINGS:
+        if key in current:
+            if restored.get(key) != current[key]:
+                _settings_log(f"restore: kept this computer's {key} "
+                              f"{current[key]!r} (the backup had "
+                              f"{restored.get(key)!r})")
+            restored[key] = current[key]
+        else:
+            restored.pop(key, None)
+    return restored
 
 
 # ----------------------------------------------------------------------

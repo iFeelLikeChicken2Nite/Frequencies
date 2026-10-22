@@ -53,10 +53,12 @@ from jobs import Job
 
 ADDRESS_FILE = "photo_pack.json"
 PACK_DIR = "photo_pack"
+LOGO_DIR = "logo_pack"              # the band logos (build 141, task 203)
 PACK_INDEX = "pack.json"            # inside the zip and the unpacked folder
 INSTALLED = "installed.json"        # what was unpacked, and from which zip
 REPORT_TOKEN_FILE = "report_token.json"   # dev: Settings; shipped: src/
 SETTING = "photo_pack"              # the opt-in (settings.json)
+LOGO_SETTING = "band_logos"         # on unless switched off (build 141)
 AGENT = "Frequencies (radio app)"
 
 CHECK_AFTER_MS = 60 * 1000
@@ -141,27 +143,51 @@ def pack_dir():
     return os.path.join(base, "frequencies", PACK_DIR)
 
 
+def logo_dir():
+    """The band logos, unpacked beside the photo pack (build 141)."""
+    return os.path.join(os.path.dirname(pack_dir()), LOGO_DIR)
+
+
 _cache = {"stamp": None, "artists": {}}
+_logo_cache = {"stamp": None, "artists": {}}
 _cache_lock = threading.Lock()
 
 
-def _index():
+def _index(folder=None, cache=None):
     """The pack's artist entries, read again only when the file changes."""
-    path = os.path.join(pack_dir(), PACK_INDEX)
+    folder = folder or pack_dir()
+    cache = _cache if cache is None else cache
+    path = os.path.join(folder, PACK_INDEX)
     try:
         stamp = os.stat(path).st_mtime_ns
     except OSError:
         stamp = None
     with _cache_lock:
-        if stamp != _cache["stamp"]:
+        if stamp != cache["stamp"]:
             data = _read(path) if stamp else {}
             artists = data.get("artists") if isinstance(
                 data.get("artists"), dict) else {}
-            _cache["artists"] = {str(k).strip().lower(): v
-                                 for k, v in artists.items()
-                                 if isinstance(v, dict)}
-            _cache["stamp"] = stamp
-        return _cache["artists"]
+            cache["artists"] = {str(k).strip().lower(): v
+                                for k, v in artists.items()
+                                if isinstance(v, dict)}
+            cache["stamp"] = stamp
+        return cache["artists"]
+
+
+def logo_names():
+    """The logo pack's entries by lowercase name ({} with none here)."""
+    return _index(logo_dir(), _logo_cache)
+
+
+def logo_entry(key):
+    """The logo pack's entry for this artist, its logo as a full path on
+    this machine; {} when there is none."""
+    entry = dict(logo_names().get((key or "").strip().lower()) or {})
+    path = _inside(str(entry.get("logo") or ""), logo_dir())
+    if not path or not os.path.isfile(path):
+        return {}
+    entry["logo"] = path
+    return entry
 
 
 def artist_entry(key):
@@ -263,9 +289,9 @@ def talk_photo(base):
     return path if path and os.path.exists(path) else ""
 
 
-def _inside(relative):
+def _inside(relative, folder=None):
     """`relative` under the pack folder, or "" if it would leave it."""
-    root = os.path.realpath(pack_dir())
+    root = os.path.realpath(folder or pack_dir())
     path = os.path.realpath(os.path.join(root, relative))
     return path if path.startswith(root + os.sep) else ""
 
@@ -426,22 +452,34 @@ class VisualizerListFetch(Job):
         self.send(self.done, names, text)
 
 
-def installed():
+def installed(folder=None):
     """What is unpacked: {"sha256", "made", "photos", "artists"} or {}."""
-    return _read(os.path.join(pack_dir(), INSTALLED))
+    return _read(os.path.join(folder or pack_dir(), INSTALLED))
 
 
-def remove():
+def remove(folder=None):
     """Delete the pack (opting out). True if there was one."""
-    folder = pack_dir()
+    folder = folder or pack_dir()
     if not os.path.isdir(folder):
         return False
     shutil.rmtree(folder, ignore_errors=True)
-    with _cache_lock:
-        _cache["stamp"] = None
-        _cache["artists"] = {}
-    _log("pack removed (opted out)")
+    _forget()
+    _log(("logos" if folder == logo_dir() else "pack")
+         + " removed (switched off)")
     return True
+
+
+def _forget():
+    with _cache_lock:
+        for cache in (_cache, _logo_cache):
+            cache["stamp"] = None
+            cache["artists"] = {}
+
+
+def logo_address():
+    """Where logo-pack.json is: beside photo-pack.json (build 141)."""
+    address = pack_address()
+    return urllib.parse.urljoin(address, "logo-pack.json") if address else ""
 
 
 # -- checking and downloading -------------------------------------------------
@@ -456,9 +494,13 @@ class PackUpdate(Job):
     unpacking = pyqtSignal()
     done = pyqtSignal(str, str)
 
-    def __init__(self, address, parent=None):
+    def __init__(self, address, parent=None, folder=None, what="pack"):
         super().__init__(parent)
         self.address = address
+        # The band logos come the same way, into their own folder
+        # (build 141); "none" when none are published yet.
+        self.folder = folder or pack_dir()
+        self.what = what
         self._cancel = threading.Event()
 
     def stop(self):
@@ -468,9 +510,9 @@ class PackUpdate(Job):
         try:
             state, text = self._update()
         except Exception as exc:                # noqa: BLE001
-            _log(f"failed: {exc}")
+            _log(f"{self.what} failed: {exc}")
             state, text = "failed", _why(exc)
-        _log(f"{state}: {text}")
+        _log(f"{self.what} {state}: {text}")
         self.send(self.done, state, text)
 
     def _update(self):
@@ -478,13 +520,15 @@ class PackUpdate(Job):
         _log(f"checking {self.address}")
         answer = requests.get(self.address, timeout=20,
                               headers={"User-Agent": AGENT})
+        if answer.status_code == 404 and self.what == "logos":
+            return "none", "no logos published yet"
         answer.raise_for_status()
         manifest = answer.json()
         if not isinstance(manifest, dict) or not manifest.get("sha256"):
             return "failed", "the pack address doesn't point at a pack"
-        have = installed()
+        have = installed(self.folder)
         if have.get("sha256") == manifest["sha256"]:
-            return "current", _summary(have)
+            return "current", _summary(have, self.what)
 
         url = urllib.parse.urljoin(
             self.address, manifest.get("url") or manifest.get("file")
@@ -493,7 +537,7 @@ class PackUpdate(Job):
         _log(f"update available ({manifest.get('made', '?')}, "
              f"{size // 1024} KB); downloading {url}")
         self.send(self.progress, 0)
-        folder = pack_dir()
+        folder = self.folder
         os.makedirs(os.path.dirname(folder), exist_ok=True)
         part = folder + ".download"
         digest = hashlib.sha256()
@@ -528,7 +572,7 @@ class PackUpdate(Job):
             part = plain
         info = _unpack(part, folder, manifest)
         os.remove(part)
-        return "updated", _summary(info)
+        return "updated", _summary(info, self.what)
 
 
 class ManifestFetch(Job):
@@ -543,6 +587,7 @@ class ManifestFetch(Job):
         self.address = address
 
     def work(self):
+        _published_logos["manifest"] = self._logos()
         try:
             import requests
             answer = requests.get(self.address, timeout=20,
@@ -558,6 +603,53 @@ class ManifestFetch(Job):
             self.send(self.done, None, _why(exc))
             return
         self.send(self.done, manifest, "")
+
+    def _logos(self):
+        """The published logo-pack.json: {} when none, None when it
+        couldn't be read (build 141)."""
+        try:
+            import requests
+            answer = requests.get(
+                urllib.parse.urljoin(self.address, "logo-pack.json"),
+                timeout=20, headers={"User-Agent": AGENT})
+            if answer.status_code == 404:
+                return {}
+            answer.raise_for_status()
+            manifest = answer.json()
+            return manifest if isinstance(manifest, dict) else None
+        except Exception:                       # noqa: BLE001
+            return None
+
+
+# The published logo-pack.json as ManifestFetch last read it.
+_published_logos = {"manifest": None}
+
+
+def logo_count():
+    """"N band logos here, the published logos have M" and which of
+    yours aren't published yet (build 141, task 203)."""
+    import storage
+    here = {}
+    for key, entry in storage.load_artist_overrides().items():
+        logo = entry.get("logo")
+        if isinstance(logo, str) and logo.strip() \
+                and os.path.isfile(logo.strip()):
+            here[key] = (entry.get("name") or key).strip()
+    line = (f"{len(here)} band logo{'' if len(here) == 1 else 's'} here")
+    manifest = _published_logos["manifest"]
+    if manifest is None:
+        return line + "."
+    if not manifest:
+        return line + "; no logos are published yet."
+    line += (f", the published logos have {manifest.get('logos', '?')} "
+             f"(made {manifest.get('made') or '?'}).")
+    published = {str(n).strip().lower()
+                 for n in manifest.get("names") or []}
+    new = sorted(here[k] for k in here if k not in published)
+    if new:
+        line += " Not published yet: " + ", ".join(new[:8]) + (
+            f" and {len(new) - 8} more" if len(new) > 8 else "") + "."
+    return line
 
 
 def photo_count(manifest=None, why=""):
@@ -690,13 +782,14 @@ def _unpack(zip_path, folder, manifest):
         os.rename(folder, old)
     os.rename(fresh, folder)
     shutil.rmtree(old, ignore_errors=True)
-    with _cache_lock:
-        _cache["stamp"] = None
+    _forget()
     return info
 
 
-def _summary(info):
+def _summary(info, what="pack"):
     made = info.get("made") or "?"
+    if what == "logos":
+        return f"{info.get('artists', 0)} logos, made {made}"
     return (f"{info.get('photos', 0)} photos, "
             f"{info.get('artists', 0)} artists, made {made}")
 
@@ -727,6 +820,7 @@ class Keeper(QObject):
 
     status = pyqtSignal(str)
     bio_status = pyqtSignal(str)
+    logo_status = pyqtSignal(str)
     changed = pyqtSignal()
 
     def __init__(self, settings, parent=None):
@@ -744,12 +838,23 @@ class Keeper(QObject):
         self._bio_timer = QTimer(self)
         self._bio_timer.setSingleShot(True)
         self._bio_timer.timeout.connect(self.check_bios)
+        # The band logos (build 141, task 203): on unless the user
+        # switched them off, whether or not the photos are, checked at
+        # the same times as the photos.
+        self.logo_text = ""
+        self._logo_job = None
+        self._logo_timer = QTimer(self)
+        self._logo_timer.setSingleShot(True)
+        self._logo_timer.timeout.connect(self.check_logos)
         self._say(self._resting())
         self._say_bios(self._bio_resting())
+        self._say_logos(self._logo_resting())
         if self.enabled():
             self._timer.start(CHECK_AFTER_MS)
         if pack_address():
             self._bio_timer.start(CHECK_AFTER_MS)
+        if self.logos_wanted():
+            self._logo_timer.start(CHECK_AFTER_MS)
         # The developer's visualizer list (task 142): user builds only,
         # until it has come once. A failure waits for the next launch.
         import devmode
@@ -813,6 +918,68 @@ class Keeper(QObject):
             self.changed.emit()
         self._bio_timer.start(CHECK_EVERY_MS)
 
+    # -- band logos (build 141) -----------------------------------------
+
+    def logos_wanted(self):
+        return bool(self.settings.get(LOGO_SETTING, True)) \
+            and bool(pack_address())
+
+    def _logo_resting(self):
+        if not pack_address():
+            return ""
+        if not self.settings.get(LOGO_SETTING, True):
+            return "Off: artists' names are shown as text."
+        have = installed(logo_dir())
+        if have:
+            return (f"Band logos: {have.get('artists', 0)}, made "
+                    f"{have.get('made') or '?'}.")
+        return "Band logos: none yet."
+
+    def _say_logos(self, text):
+        self.logo_text = text
+        self.logo_status.emit(text)
+
+    def check_logos(self):
+        if not self.logos_wanted():
+            self._say_logos(self._logo_resting())
+            return
+        if self._logo_job is not None and self._logo_job.isRunning():
+            return
+        self._logo_timer.stop()
+        job = PackUpdate(logo_address(), folder=logo_dir(), what="logos")
+        job.done.connect(self._logos_done)
+        self._logo_job = job
+        job.start()
+
+    def _logos_done(self, state, text):
+        self._logo_job = None
+        if not self.settings.get(LOGO_SETTING, True):
+            if remove(logo_dir()):
+                self.changed.emit()
+            self._say_logos(self._logo_resting())
+            return
+        if state == "failed":
+            self._say_logos(f"Band logos: couldn't check ({text}). Trying "
+                            f"again in an hour.")
+            self._logo_timer.start(RETRY_MS)
+            return
+        self._say_logos(self._logo_resting())
+        if state == "updated":
+            self.changed.emit()
+        self._logo_timer.start(CHECK_EVERY_MS)
+
+    def set_logos(self, on):
+        """The Settings switch (already saved)."""
+        if on:
+            _log("band logos on")
+            self.check_logos()
+            return
+        self._logo_timer.stop()
+        if self._logo_job is not None:
+            self._logo_job.stop()
+        remove(logo_dir())
+        self._say_logos(self._logo_resting())
+
     def enabled(self):
         return bool(self.settings.get(SETTING)) and bool(pack_address())
 
@@ -852,6 +1019,7 @@ class Keeper(QObject):
 
     def check_now(self):
         self.check_bios()
+        self.check_logos()
         if not self.enabled():
             self._say(self._resting())
             return

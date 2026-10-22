@@ -138,6 +138,33 @@ class ArtistEditDialog(QDialog):
         credit.addRow("Photo link:", self.photo_url)
         outer.addLayout(credit)
 
+        # The band's logo, shown in place of the name (build 141, task
+        # 203): chosen, then sized and placed before it is saved.
+        import bandlogo
+        self.logo_place = bandlogo.placement(existing)
+        logo_row = QHBoxLayout()
+        self.logo = QLineEdit(existing.get("logo", ""))
+        self.logo.setPlaceholderText(
+            "A PNG with a see-through background, or blank")
+        logo_row.addWidget(self.logo, 1)
+        pick = QPushButton("Choose…")
+        pick.clicked.connect(self._choose_logo)
+        logo_row.addWidget(pick)
+        self.adjust = QPushButton("Adjust…")
+        self.adjust.clicked.connect(self._adjust_logo)
+        logo_row.addWidget(self.adjust)
+        self.logo.textChanged.connect(
+            lambda text: self.adjust.setEnabled(os.path.isfile(text.strip())))
+        self.adjust.setEnabled(os.path.isfile(self.logo.text().strip()))
+        logo_form = QFormLayout()
+        logo_form.addRow("Logo:", logo_row)
+        outer.addLayout(logo_form)
+        if station is not None:
+            # Stations keep their name as text.
+            for widget in (self.logo, pick, self.adjust,
+                           logo_form.labelForField(logo_row)):
+                widget.setVisible(False)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Save
                                    | QDialogButtonBox.Cancel)
         buttons.button(QDialogButtonBox.Save).setText("Save correction")
@@ -160,6 +187,39 @@ class ArtistEditDialog(QDialog):
             "Images (*.png *.jpg *.jpeg *.webp);;All files (*)")
         if path:
             self.photo.setText(path)
+
+    def _choose_logo(self):
+        """Pick a logo, then size and place it (the editor); Cancel there
+        keeps what was before."""
+        start = self.logo.text().strip()
+        if not os.path.isfile(start):
+            # The band-logos folder that comes with the source zip.
+            here = os.path.dirname(os.path.dirname(os.path.abspath(
+                __file__)))
+            start = next((p for p in (os.path.join(here, "band-logos"),
+                                      os.path.expanduser("~"))
+                          if os.path.isdir(p)), "")
+        path, _ = QFileDialog.getOpenFileName(
+            self, f"Logo of {self.artist}", start,
+            "Images (*.png *.webp);;All files (*)")
+        if path and self._adjust_logo(path, (1.0, 0.0, 0.0)):
+            self.logo.setText(path)
+
+    def _adjust_logo(self, path=None, place=None):
+        """The logo's size and place, as users will see it."""
+        import bandlogo
+        path = path or self.logo.text().strip()
+        if not os.path.isfile(path):
+            return False
+        photo = self.photo.text().strip()
+        editor = bandlogo.LogoEditor(self.artist, path,
+                                     place or self.logo_place,
+                                     photo if os.path.isfile(photo) else "",
+                                     self)
+        if not editor.exec_():
+            return False
+        self.logo_place = editor.place()
+        return True
 
     def _clear(self):
         if self.station is not None:
@@ -186,6 +246,13 @@ class ArtistEditDialog(QDialog):
             "photo_url": self.photo_url.text().strip(),
         }
         written = {k: v for k, v in written.items() if v}
+        logo = self.logo.text().strip()
+        if logo and self.station is None:
+            import bandlogo
+            written["logo"] = bandlogo.keep_logo(self.artist, logo)
+            for field, value in zip(("logo_scale", "logo_x", "logo_y"),
+                                    self.logo_place):
+                written[field] = round(value, 3)
 
         if self.station is not None:
             # The photo is copied beside the talk list, so the build can

@@ -6,7 +6,11 @@ release, replacing the one there:
 
   Publish my photos to GitHub     frequencies-photo-pack.b32 (base32 twice),
                                   then photo-pack.json - opted-in users'
-                                  apps pick it up at their next check
+                                  apps pick it up at their next check;
+                                  and the band logos the same way
+                                  (frequencies-logo-pack.b32 +
+                                  logo-pack.json, build 141), which every
+                                  user's app picks up unless switched off
   Publish my bio fixes to GitHub  bio-fixes.json - every user's app picks
                                   it up, no opt-in
   Publish my visualizer list      visualizer-list.json - the presets you
@@ -101,6 +105,12 @@ def gather(kind):
             f"{len(missing)} artist photos aren't on this computer (such as "
             f"{missing[0]}'s), so publishing from here would take them out "
             f"of the photo pack. Publish it from the computer that has them")
+    missing = packbuild.missing_logos(dev)
+    if missing:
+        raise RuntimeError(
+            f"{len(missing)} band logos aren't on this computer (such as "
+            f"{missing[0]}'s), so publishing from here would take them out. "
+            f"Publish from the computer that has them")
     talk = {}
     for key, entry in storage.talk_entries().items():
         photo = (entry.get("photo") or "").strip()
@@ -117,14 +127,23 @@ def gather(kind):
             name = os.path.basename(photo)
         talk[name] = path
     data, manifest = packbuild.photo_pack(dev, talk, warn=_log)
-    if data is None:
-        return [], "no photos"
-    what = (f"{manifest['photos'] - manifest['talk_photos']} artist "
-            f"photos, {manifest['talk_photos']} talk station photos, "
-            f"{len(data) // 1024} KB")
-    # The pack first: a manifest must never point at a file not there yet.
-    return [(packbuild.PACK_NAME, data),
-            (packbuild.MANIFEST, packbuild.manifest_bytes(manifest))], what
+    files, what = [], []
+    if data is not None:
+        what.append(f"{manifest['photos'] - manifest['talk_photos']} artist "
+                    f"photos, {manifest['talk_photos']} talk station photos, "
+                    f"{len(data) // 1024} KB")
+        # The pack first: a manifest must never point at a file not
+        # there yet.
+        files += [(packbuild.PACK_NAME, data),
+                  (packbuild.MANIFEST, packbuild.manifest_bytes(manifest))]
+    # The band logos, a pack of their own beside it (build 141).
+    logos, logo_manifest = packbuild.logo_pack(dev, warn=_log)
+    if logos is not None:
+        what.append(f"{logo_manifest['logos']} band logos")
+        files += [(packbuild.LOGO_NAME, logos),
+                  (packbuild.LOGO_MANIFEST,
+                   packbuild.manifest_bytes(logo_manifest))]
+    return files, ", ".join(what) or "no photos"
 
 
 class _Upload:
@@ -192,8 +211,8 @@ class Publish(Job):
         self.send(self.progress, "Getting your files ready…")
         files, what = gather(self.kind)
         if not files:
-            raise RuntimeError("there are no photos to publish (Edit this "
-                               "artist… > photo)")
+            raise RuntimeError("there are no photos or logos to publish "
+                               "(Edit this artist… > photo or logo)")
         owner, name = repo
         base = f"{API}/repos/{owner}/{name}"
         self.send(self.progress, "Finding the release on GitHub…")

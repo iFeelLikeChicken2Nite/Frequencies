@@ -43,6 +43,34 @@ RATIO_CHOICES = [(0, "Never"), (2, "Every 2 tracks"), (4, "Every 4 tracks"),
                  (8, "Every 8 tracks"), (16, "Every 16 tracks")]
 
 
+class _WheelSafe:
+    """A box or slider that only takes the mouse wheel once clicked
+    (task 205): scrolling Settings with the pointer passing over the Theme
+    box used to pick and save the next theme. The wheel goes on to the
+    page instead, so it scrolls."""
+
+    def _wheel_safe(self):
+        self.setFocusPolicy(Qt.StrongFocus)
+
+    def wheelEvent(self, event):
+        if not self.hasFocus():
+            event.ignore()
+            return
+        super().wheelEvent(event)
+
+
+class _Combo(_WheelSafe, QComboBox):
+    def __init__(self, *args):
+        super().__init__(*args)
+        self._wheel_safe()
+
+
+class _Slider(_WheelSafe, QSlider):
+    def __init__(self, *args):
+        super().__init__(*args)
+        self._wheel_safe()
+
+
 def _section(title, blurb=""):
     box = QWidget()
     lay = QVBoxLayout(box)
@@ -279,7 +307,7 @@ class OptionsPage(QWidget):
         return box
 
     def _choice(self, key, choices, default, on_change=None):
-        combo = QComboBox()
+        combo = _Combo()
         for value, label in choices:
             combo.addItem(label, value)
         index = combo.findData(self.lib.settings.get(key, default))
@@ -313,7 +341,7 @@ class OptionsPage(QWidget):
             default=False, on_change=lambda _on: self.changed.emit(
                 "eq_advanced")))
 
-        self.output = QComboBox()
+        self.output = _Combo()
         self.output.setMinimumWidth(240)
         self._fill_outputs()
         self.output.currentIndexChanged.connect(self._pick_output)
@@ -324,7 +352,7 @@ class OptionsPage(QWidget):
             "Covers the silence while the stream opens",
             on_change=self._noise_switched))
 
-        self.noise_vol = QSlider(Qt.Horizontal)
+        self.noise_vol = _Slider(Qt.Horizontal)
         self.noise_vol.setRange(0, 100)
         self.noise_vol.setFixedWidth(180)
         self.noise_vol.setValue(int(self.lib.settings.get("noise_volume", 100)))
@@ -355,7 +383,7 @@ class OptionsPage(QWidget):
 
     def _build_lyric_size(self, lay):
         """The lyrics text size slider (it sat under Sound until build 89)."""
-        self.lyric_size = QSlider(Qt.Horizontal)
+        self.lyric_size = _Slider(Qt.Horizontal)
         self.lyric_size.setRange(12, 34)
         self.lyric_size.setFixedWidth(180)
         self.lyric_size.setValue(int(self.lib.settings.get("lyric_size", 13)))
@@ -522,6 +550,22 @@ class OptionsPage(QWidget):
         lay.addWidget(_row(self.pack_status, check))
         self.pack_status.parentWidget().layout().setStretch(0, 1)
 
+        # Band logos (build 141, task 203): on unless switched off, and
+        # downloaded at the same times as the photos, photos on or not.
+        logos = QCheckBox("Show band logos in place of plain text")
+        logos.setChecked(bool(self.lib.settings.get(photopack.LOGO_SETTING,
+                                                    True)))
+        logos.toggled.connect(
+            lambda on: self._save(photopack.LOGO_SETTING, bool(on)))
+        self.logo_check = logos
+        lay.addWidget(logos)
+        if has_pack and keeper:
+            logo_status = QLabel(keeper.logo_text)
+            logo_status.setProperty("role", "secondary")
+            logo_status.setWordWrap(True)
+            keeper.logo_status.connect(logo_status.setText)
+            lay.addWidget(logo_status)
+
         if devmode.is_dev():
             from PyQt5.QtWidgets import QLineEdit
             for name, label, hint in (
@@ -678,21 +722,22 @@ class OptionsPage(QWidget):
         if label is None:
             return
         import photopack
+
+        def say(text):
+            # The band logos have their own line (build 141).
+            label.setText(text + "\n" + photopack.logo_count())
         job = getattr(self, "_count_job", None)
         if not fetch or job is not None:
             known = self._published_pack
-            label.setText(photopack.photo_count(*known) if known
-                          else photopack.photo_count() + (
-                              " Checking the published pack…" if job
-                              else ""))
+            say(photopack.photo_count(*known) if known
+                else photopack.photo_count() + (
+                    " Checking the published pack…" if job else ""))
             return
         address = photopack.pack_address()
         if not address:
-            label.setText(photopack.photo_count(None, "no photo pack "
-                                                "address"))
+            say(photopack.photo_count(None, "no photo pack address"))
             return
-        label.setText(photopack.photo_count() + " Checking the published "
-                      "pack…")
+        say(photopack.photo_count() + " Checking the published pack…")
 
         def came(manifest, why):
             self._count_job = None
@@ -1017,6 +1062,9 @@ class OptionsPage(QWidget):
         if clicked is replace_btn:
             self.stop_playback.emit()
             self.lib.stations[:] = stations
+            # This computer's photo pack, logo and theme choices stay
+            # (task 204): a dev-build backup switched the pack off.
+            storage.keep_local_settings(self.lib.settings, settings)
             self.lib.settings.clear()
             self.lib.settings.update(settings)
             self.lib.health.clear()
@@ -1279,7 +1327,7 @@ class OptionsPage(QWidget):
             self._choice("sleep_action", self.SLEEP_ACTIONS, "fade",
                          on_change=self._sleep_action)))
 
-        self.wake_station = QComboBox()
+        self.wake_station = _Combo()
         self.wake_station.setMinimumWidth(220)
         self._fill_wake_stations()
         self.wake_station.currentIndexChanged.connect(self._pick_wake)
@@ -1295,7 +1343,7 @@ class OptionsPage(QWidget):
         # goes stale — this picks any station carrying the tag, so it
         # stays fresh and survives the station it would have named being
         # removed.
-        self.wake_tag = QComboBox()
+        self.wake_tag = _Combo()
         self.wake_tag.setMinimumWidth(220)
         self._fill_wake_tags()
         self.wake_tag.currentIndexChanged.connect(self._pick_wake_tag)

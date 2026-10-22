@@ -184,6 +184,9 @@ class FrequenciesWindow(Shell):
     def __init__(self, library, player, logo_fetcher=None, accent=True):
         super().__init__()
         self.lib = library
+        # Band logos in place of artists' names (build 141, task 203).
+        import bandlogo
+        bandlogo.set_on(library.settings.get("band_logos", True))
         # brat mode (task 48): a song from Charli XCX's brat makes the
         # whole app lowercase while it plays. brat.py decides and switches.
         # First, so nothing that reports a song can arrive before it.
@@ -1220,6 +1223,17 @@ class FrequenciesWindow(Shell):
         self._age_timer.stop()
 
     def _setting_changed(self, key):
+        if key == "band_logos":
+            # Logos in place of names (build 141, task 203).
+            import bandlogo
+            import photopack
+            on = bool(self.lib.settings.get(key, True))
+            bandlogo.set_on(on)
+            keeper = photopack.keeper(self.lib.settings)
+            if keeper is not None:
+                keeper.set_logos(on)
+            self._refresh_logos()
+            return
         if key == "theme":
             self.apply_theme(self.lib.settings.get("theme", "midnight"))
             return
@@ -3025,21 +3039,22 @@ class FrequenciesWindow(Shell):
         # good reason to open it.
         button.setEnabled(True)
         if both_off:
-            button.setToolTip("Full screen")
+            button.setToolTip(keys.tip(
+                self.lib.settings, "Comfort View", "fullscreen"))
             return
 
         if has_lyrics or has_artist:
-            text = "Full screen"
+            text = "Comfort View"
         elif self.playback.current is None:
-            text = "Full screen — nothing is playing yet"
+            text = "Comfort View — nothing is playing yet"
         elif not self.lib.settings.get("artist_lookup", True) \
                 and not (self.playback.current or {}).get("lyrics_enabled",
                                                           True):
-            text = ("Full screen — lyrics and artist lookups are both off "
+            text = ("Comfort View — lyrics and artist lookups are both off "
                     "for this station, so there would be nothing to show "
                     "but the artwork")
         else:
-            text = ("Full screen — no lyrics or artist information yet, so "
+            text = ("Comfort View — no lyrics or artist information yet, so "
                     "it would show the artwork alone")
         button.setToolTip(keys.tip(self.lib.settings, text, "fullscreen"))
 
@@ -3193,9 +3208,19 @@ class FrequenciesWindow(Shell):
             what, photo)
         self.lib.save_settings()
 
+    def _refresh_logos(self):
+        """Each artist name on screen as its logo, or as text again."""
+        for view in (getattr(self.panel, "header", None),
+                     getattr(getattr(self.panel, "artist", None), "header",
+                             None),
+                     self.now_playing):
+            if view is not None:
+                view.refresh_logo()
+
     def _photo_pack_changed(self):
         """A new photo pack (or none): show the artist on screen again
         with what it brings."""
+        self._refresh_logos()     # the logo pack comes the same way
         artist = (getattr(self, "_artist_key", "")
                   or self.panel.heading.text()).strip()
         if self.feeds is not None and self.feeds.holds_station_info():
@@ -4817,6 +4842,7 @@ class FrequenciesWindow(Shell):
                               f'{credit}</a>')
                 self.on_sources(artist=credit)
 
+        self._refresh_logos()       # a logo saved or taken out (build 141)
         if self.feeds is not None:
             try:
                 self.feeds.refresh_artist(name)

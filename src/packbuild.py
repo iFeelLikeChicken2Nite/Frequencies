@@ -12,6 +12,11 @@ Two files go up, beside photo-pack.json:
   bio-fixes.json              the text fixes (bio, name, genres, MusicBrainz
                               id, Wikipedia title); every user's app fetches
                               it, no opt-in (photopack.BioUpdate)
+
+Since build 141 (task 203) the band logos go up beside them, as a pack of
+their own made the same way (frequencies-logo-pack.b32 + logo-pack.json):
+builds before 141 never ask for those files, and every user's app gets
+them (on by default), not only those who opted in to the photos.
 """
 
 import base64
@@ -29,6 +34,10 @@ BIO_NAME = "bio-fixes.json"
 
 TEXT_FIELDS = ("name", "genres", "mbid", "wikipedia", "bio")
 PHOTO_FIELDS = ("photo", "photo_source", "photo_url")
+LOGO_NAME = "frequencies-logo-pack.b32"
+LOGO_MANIFEST = "logo-pack.json"
+# A logo's file and how the developer placed it (bandlogo.py).
+LOGO_FIELDS = ("logo", "logo_scale", "logo_x", "logo_y")
 STAMP = (1980, 1, 1, 0, 0, 0)       # same bytes for the same pack
 
 
@@ -75,6 +84,72 @@ def missing_photos(dev):
     return missing
 
 
+def missing_logos(dev):
+    """Artists whose logo is a file this computer doesn't have."""
+    return [key for key, entry in sorted((dev or {}).items())
+            if isinstance(entry, dict)
+            and isinstance(entry.get("logo"), str) and entry["logo"].strip()
+            and not os.path.isfile(entry["logo"].strip())]
+
+
+def _encoded(files):
+    """The zip of `files` (name -> bytes), base32 twice."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as pack:
+        for name in sorted(files):
+            info = zipfile.ZipInfo(name, STAMP)
+            info.external_attr = 0o644 << 16
+            info.compress_type = (zipfile.ZIP_DEFLATED
+                                  if name.endswith(".json")
+                                  else zipfile.ZIP_STORED)
+            pack.writestr(info, files[name])
+    return base64.b32encode(base64.b32encode(buffer.getvalue()))
+
+
+def logo_pack(dev, warn=print):
+    """(encoded pack, manifest) of the band logos, or (None, None) when
+    there are none (build 141, task 203). Each entry keeps the size and
+    place the developer gave it, and the "Show as" name."""
+    files, artists = {}, {}
+    for key, entry in sorted((dev or {}).items()):
+        if not isinstance(entry, dict):
+            continue
+        path = str(entry.get("logo") or "").strip()
+        if not path:
+            continue
+        key = key.strip().lower()
+        if not os.path.isfile(path):
+            warn(f"!!  logo for '{key}' not found ({path}); packed "
+                 f"without it")
+            continue
+        name = "logos/" + slug(key) + (os.path.splitext(path)[1].lower()
+                                       or ".png")
+        with open(path, "rb") as f:
+            files[name] = f.read()
+        out = {"logo": name}
+        for field in ("logo_scale", "logo_x", "logo_y"):
+            try:
+                out[field] = round(float(entry[field]), 3)
+            except (KeyError, TypeError, ValueError):
+                pass
+        if str(entry.get("name") or "").strip():
+            out["name"] = str(entry["name"]).strip()
+        artists[key] = out
+    if not files:
+        return None, None
+    files["pack.json"] = json.dumps(
+        {"format": 1, "artists": artists}, indent=2, ensure_ascii=False,
+        sort_keys=True).encode("utf-8")
+    data = _encoded(files)
+    manifest = {"format": 1, "file": LOGO_NAME, "encoding": "base32x2",
+                "size": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
+                "made": time.strftime("%Y-%m-%d"),
+                "logos": len(artists), "artists": len(artists),
+                "names": sorted(artists)}
+    return data, manifest
+
+
 def photo_pack(dev, talk_photos, warn=print):
     """(encoded pack, manifest) or (None, None) when there are no photos.
 
@@ -115,16 +190,7 @@ def photo_pack(dev, talk_photos, warn=print):
     files["pack.json"] = json.dumps(
         {"format": 1, "artists": artists}, indent=2, ensure_ascii=False,
         sort_keys=True).encode("utf-8")
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w") as pack:
-        for name in sorted(files):
-            info = zipfile.ZipInfo(name, STAMP)
-            info.external_attr = 0o644 << 16
-            info.compress_type = (zipfile.ZIP_DEFLATED
-                                  if name.endswith(".json")
-                                  else zipfile.ZIP_STORED)
-            pack.writestr(info, files[name])
-    data = base64.b32encode(base64.b32encode(buffer.getvalue()))
+    data = _encoded(files)
     manifest = {"format": 1, "file": PACK_NAME, "encoding": "base32x2",
                 "size": len(data),
                 "sha256": hashlib.sha256(data).hexdigest(),

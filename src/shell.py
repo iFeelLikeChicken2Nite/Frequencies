@@ -2763,7 +2763,7 @@ class PlayerBar(QWidget):
         self._shuffle_step = 0
         self.shuffle_btn.toggled.connect(self._on_shuffle)
 
-        self.full_btn = tool_button("fullscreen", "Full screen", 22)
+        self.full_btn = tool_button("fullscreen", "Comfort View", 22)
         self.full_btn.clicked.connect(self.fullscreen_requested.emit)
         # The corners move apart as you point at it: the button does what
         # the picture is doing.

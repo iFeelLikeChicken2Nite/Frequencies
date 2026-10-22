@@ -664,7 +664,8 @@ def _write_radiodroid(stations):
 def write_file(path, stations, fmt):
     """Write the chosen stations out in another app's format."""
     if fmt == "streamdeck":
-        storage.export_backup(path, list(stations), storage.load_settings(), {})
+        storage.export_backup(path, list(stations),
+                              storage.load_settings(remember=False), {})
         return
     writer = {
         "goodvibes": _write_goodvibes,

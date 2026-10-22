@@ -1606,6 +1606,9 @@ class ArtistHeader(QWidget):
         self.name.setWordWrap(True)
         self.name.setProperty("role", "display")
         self.name.setAlignment(Qt.AlignLeft | Qt.AlignBottom)
+        # The band's logo in place of the name (build 141, task 203).
+        from bandlogo import LogoMark
+        self.logo = LogoMark(self)
         self._art = QPixmap()
 
     def set_tone(self, colour):
@@ -1748,11 +1751,27 @@ class ArtistHeader(QWidget):
 
     def set_name(self, text):
         self.name.setText(text or "")
+        self.refresh_logo(layout=False)
         if not text and self._art.isNull():
             self.setFixedHeight(0)
         elif self._art.isNull():
             self.setFixedHeight(self.HEIGHT)
         self._layout()
+
+    def refresh_logo(self, layout=True):
+        """The logo for the name shown, or the name as text (the switch,
+        a new logo pack, a correction saved)."""
+        import bandlogo
+        text = self.name.text()
+        info = bandlogo.find(text)
+        self.logo.set_logo(info, self._tone or T["bg1"])
+        self.name.setVisible(info is None)
+        tip = text if info is not None else ""
+        for widget in (self, self.photo, self.tower):
+            widget.setToolTip(tip)
+        self.logo.setAccessibleName(tip)
+        if layout:
+            self._layout()
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
@@ -1792,6 +1811,7 @@ class ArtistHeader(QWidget):
             self.name.setGeometry(12, self.height() - 62,
                                   max(0, self.width() - 24), 54)
             self.name.raise_()
+            self._lay_logo()
             return
         self.tower.setVisible(False)
         self.photo.setVisible(True)
@@ -1824,6 +1844,13 @@ class ArtistHeader(QWidget):
         self.name.setGeometry(12, self.height() - 62,
                               max(0, self.width() - 24), 54)
         self.name.raise_()
+        self._lay_logo(tone)
+
+    def _lay_logo(self, tone=None):
+        self.logo.tone = tone or self._tone or T["bg1"]
+        self.logo.setGeometry(0, 0, self.width(), self.height())
+        self.logo.raise_()
+        self.logo.update()
 
 
 # The artist photo's fade: where it begins (share of the height from the

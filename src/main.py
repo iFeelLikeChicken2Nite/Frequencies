@@ -114,6 +114,31 @@ def hold_running_mutex():
         pass
 
 
+def _log_other_copies():
+    """Says so in the log when another copy of Frequencies is already
+    running (task 205): two copies share one settings file. Linux only."""
+    if not os.path.isdir("/proc"):
+        return
+    import crashlog
+    me = os.getpid()
+    others = []
+    for name in os.listdir("/proc"):
+        if not name.isdigit() or int(name) == me:
+            continue
+        try:
+            with open(f"/proc/{name}/cmdline", "rb") as f:
+                parts = f.read().split(b"\0")
+        except OSError:
+            continue
+        if any(p.endswith(b"/main.py") and b"frequencies" in p.lower()
+               for p in parts) and b"--webview-helper" not in parts:
+            others.append(name)
+    if others:
+        crashlog.write("[settings] another copy of Frequencies is running "
+                       f"(pid {', '.join(others)}); both use the same "
+                       "settings file")
+
+
 def missing_library_window(error):
     """A plain window naming the missing library and its package."""
     import re
@@ -200,17 +225,20 @@ def main():
     import storage
 
     settings = storage.load_settings()
+    _log_other_copies()
     stations = storage.load_stations()
     storage.apply_identify_default(stations, settings)
     storage.apply_station_eq_default(stations, settings)
     storage.lower_old_stall_timeout(settings)
     storage.raise_old_noise_volume(settings)
     storage.apply_new_defaults_120(settings)
-    # A theme that was removed (Graphite, Oxide, Cathode: build 130) falls
-    # back to the default.
+    # A theme that was removed (Graphite, Oxide, Cathode: build 130), or
+    # one from a newer build, shows as the default, without saving that
+    # over the choice (task 205).
     import themes
-    if settings.get("theme") and settings["theme"] not in themes.THEMES:
-        settings["theme"] = themes.DEFAULT
+    shown_theme = settings.get("theme", "midnight")
+    if shown_theme not in themes.THEMES:
+        shown_theme = themes.DEFAULT
     history = storage.load_history()
 
     # ---- NEW: theme -------------------------------------------------------
@@ -239,7 +267,7 @@ def main():
     app.setStyle(theme.AppStyle(app.style()))
     # Before the palette is built, so a chosen theme is what the first
     # frame is drawn in rather than something that changes a moment later.
-    theme.apply_theme(settings.get("theme", "midnight"))
+    theme.apply_theme(shown_theme)
     app.setPalette(theme.palette())
     app.setStyleSheet(theme.stylesheet())
 

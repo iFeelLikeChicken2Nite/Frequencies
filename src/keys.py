@@ -23,7 +23,7 @@ ACTIONS = (
     ("identify", "Ctrl+I", "Identify songs on this station", "player"),
     ("shuffle", "Ctrl+S", "Shuffle stations", "player"),
     ("station_settings", "Alt+J", "Station settings", "player"),
-    ("fullscreen", "F11", "Full screen", "player"),
+    ("fullscreen", "F11", "Comfort View", "player"),
     ("mute", "Ctrl+M", "Mute", "player"),
     ("search", "Ctrl+F", "Search stations", "page"),
     ("search_alt", "Ctrl+L", "Search stations", "page"),

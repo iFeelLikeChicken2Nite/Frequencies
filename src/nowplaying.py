@@ -1,4 +1,4 @@
-"""Frequencies — full-screen now playing.
+"""Frequencies — Comfort View (the full-window now playing page).
 
 Click the artwork in the player bar and the station list gives way to this:
 artwork at size, live lyrics beside it, and the whole background filled with
@@ -667,6 +667,91 @@ class LyricsView(QScrollArea):
 # The view
 # --------------------------------------------------------------------------
 
+class ArtistPhoto(QWidget):
+    """The portrait, drawn as wide as the column is right now.
+
+    It used to be a label with a fixed size taken from the column's width
+    at the moment the photo arrived. When the column then came out
+    narrower (the scroll bar appeared, the window changed) the label kept
+    the old width, the page under the scroll area became wider than its
+    window, and the wheel scrolled the artist panel sideways (task 202).
+    This one asks for no minimum width at all and works out its height
+    from whatever width the layout gives it.
+    """
+
+    RADIUS = 14
+
+    def __init__(self, max_height, parent=None):
+        super().__init__(parent)
+        self._max_height = max_height
+        self._source = QPixmap()
+        self._cache = (None, QPixmap())
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        policy = QSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        policy.setHeightForWidth(True)
+        self.setSizePolicy(policy)
+
+    def set_source(self, pm):
+        self._source = pm if pm is not None else QPixmap()
+        self._cache = (None, QPixmap())
+        self.updateGeometry()
+        self.update()
+
+    def has_photo(self):
+        return not self._source.isNull()
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, w):
+        if self._source.isNull() or self._source.width() <= 0:
+            return 0
+        h = round(w * self._source.height() / self._source.width())
+        return max(1, min(h, self._max_height))
+
+    def sizeHint(self):
+        return QSize(220, self.heightForWidth(220))
+
+    def minimumSizeHint(self):
+        return QSize(0, 0)
+
+    def _scaled(self):
+        size = self.size()
+        if self._cache[0] != size:
+            width = max(1, size.width())
+            scaled = self._source.scaledToWidth(width, Qt.SmoothTransformation)
+            if scaled.height() > size.height():
+                top = int((scaled.height() - size.height()) * 0.2)
+                scaled = scaled.copy(0, top, width, size.height())
+            self._cache = (size, rounded(scaled, self.RADIUS))
+        return self._cache[1]
+
+    def paintEvent(self, e):
+        if self._source.isNull():
+            return
+        p = QPainter(self)
+        p.drawPixmap(0, 0, self._scaled())
+        p.end()
+
+
+class ArtistScroll(QScrollArea):
+    """Scrolls up and down only. A long biography runs on; nothing here
+    ever moves sideways, whatever the wheel or the keys do."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        bar = self.horizontalScrollBar()
+        bar.valueChanged.connect(lambda v: bar.setValue(0) if v else None)
+
+    def wheelEvent(self, e):
+        sideways = abs(e.angleDelta().x()) > abs(e.angleDelta().y())
+        if sideways or e.modifiers() & Qt.ShiftModifier:
+            e.ignore()
+            return
+        super().wheelEvent(e)
+
+
 class NowPlaying(QWidget):
     """Full-bleed now playing. Lives as a page in the shell's stack, so the
     player bar stays put underneath it."""
@@ -674,7 +759,7 @@ class NowPlaying(QWidget):
     dismissed = pyqtSignal()
 
     ART_MAX = 420
-    ART_MIN = 220
+    ART_MIN = 150           # the cover shrinks to this in a small window
     PHOTO = 132
     PHOTO_MAX = 460         # tallest the full-screen portrait may be
 
@@ -686,17 +771,21 @@ class NowPlaying(QWidget):
         self._backdrop_stale = False
         self._veil = 150          # how far the backdrop is knocked back
 
-        outer = QHBoxLayout(self)
+        # Margins and gaps are set from the width in resizeEvent: 48 px of
+        # each is room to breathe on a big screen and most of a small
+        # window's lyrics column on a small one.
+        self._outer = outer = QHBoxLayout(self)
         outer.setContentsMargins(48, 40, 40, 40)
         outer.setSpacing(48)
 
         # Art and titles, then the words, then who made them: three
         # columns, most concrete on the left.
-        outer.addWidget(self._build_left(), 0)
+        self._left_col = self._build_left()
+        outer.addWidget(self._left_col, 0)
         self.lyrics = LyricsView(on_dark=True)
-        outer.addWidget(self.lyrics, 3)
+        outer.addWidget(self.lyrics, 1)
         self._artist_col = self._build_artist()
-        outer.addWidget(self._artist_col, 2)
+        outer.addWidget(self._artist_col, 1)
 
     def _build_left(self):
         col = QWidget()
@@ -725,12 +814,14 @@ class NowPlaying(QWidget):
         lay.addWidget(self.song)
 
         self.artist = QLabel("")
+        self.artist.setWordWrap(True)
         self.artist.setStyleSheet(
             "background: transparent; color: rgba(255,255,255,175);"
             "font-size: 18px; padding-top: 4px;")
         lay.addWidget(self.artist)
 
         self.station = QLabel("")
+        self.station.setWordWrap(True)
         self.station.setStyleSheet(
             "background: transparent; color: rgba(255,255,255,120);"
             "font-size: 13px; padding-top: 14px;")
@@ -745,12 +836,11 @@ class NowPlaying(QWidget):
         An empty column is worse than a narrower layout: the lyrics take
         the space back when nothing is known about the artist.
         """
-        col = QScrollArea()
+        col = ArtistScroll()
         col.setWidgetResizable(True)
         col.setFrameShape(QScrollArea.NoFrame)
-        col.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         col.setStyleSheet("QScrollArea { background: transparent; }")
-        col.setMinimumWidth(260)
+        col.setMinimumWidth(200)
         col.setMaximumWidth(520)
 
         # Scrolled, so a long biography runs on instead of being cut off
@@ -758,7 +848,7 @@ class NowPlaying(QWidget):
         body = QWidget()
         body.setStyleSheet("background: transparent;")
         lay = QVBoxLayout(body)
-        lay.setContentsMargins(0, 34, 8, 24)
+        lay.setContentsMargins(0, 34, 16, 24)
         lay.setSpacing(16)
 
         self.artist_name = QLabel("")
@@ -766,6 +856,11 @@ class NowPlaying(QWidget):
         self.artist_name.setStyleSheet(
             "background: transparent; color: #ffffff; font-size: 22px;")
         lay.addWidget(self.artist_name)
+        # The band's logo in place of the name, when there is one
+        # (build 141, task 203).
+        from bandlogo import LogoName
+        self.artist_logo = LogoName()
+        lay.addWidget(self.artist_logo)
 
         self.artist_bio = QLabel("")
         self.artist_bio.setWordWrap(True)
@@ -778,10 +873,9 @@ class NowPlaying(QWidget):
         # Under the words rather than over them, and large: at the foot of
         # a column of prose a photograph reads as who that was about,
         # where above it competes with the album art on the other side.
-        self.artist_photo = QLabel()
-        self.artist_photo.setStyleSheet("background: transparent;")
+        self.artist_photo = ArtistPhoto(self.PHOTO_MAX)
         self.artist_photo.setVisible(False)
-        lay.addWidget(self.artist_photo, 0, Qt.AlignLeft)
+        lay.addWidget(self.artist_photo)
         lay.addStretch(1)
 
         col.setWidget(body)
@@ -790,29 +884,26 @@ class NowPlaying(QWidget):
 
     def set_artist(self, name, biography="", photo=None):
         self.artist_name.setText(name or "")
+        self.refresh_logo()
         self.artist_bio.setText(biography or "")
         self._artist_pixmap = photo
         self._lay_artist_photo()
         self._artist_col.setVisible(bool(name and biography))
 
-    def _lay_artist_photo(self):
-        """As wide as the column, rounded on all four corners.
+    def refresh_logo(self):
+        """The logo for the name shown, or the name as text."""
+        import bandlogo
+        name = self.artist_name.text()
+        info = bandlogo.find(name)
+        self.artist_logo.set_logo(info, name)
+        self.artist_name.setVisible(info is None)
 
-        Not a fixed square: the column is the measure, and a portrait kept
-        at its own proportions is a photograph rather than a crop.
-        """
+    def _lay_artist_photo(self):
+        """Hand the portrait to the widget that draws it; it follows the
+        column's width by itself (see ArtistPhoto)."""
         photo = getattr(self, "_artist_pixmap", None)
-        if photo is None or photo.isNull():
-            self.artist_photo.setVisible(False)
-            return
-        width = max(180, self._artist_col.viewport().width() - 24)
-        scaled = photo.scaledToWidth(width, Qt.SmoothTransformation)
-        if scaled.height() > self.PHOTO_MAX:
-            top = int((scaled.height() - self.PHOTO_MAX) * 0.2)
-            scaled = scaled.copy(0, top, width, self.PHOTO_MAX)
-        self.artist_photo.setPixmap(rounded(scaled, 14))
-        self.artist_photo.setFixedSize(scaled.size())
-        self.artist_photo.setVisible(True)
+        self.artist_photo.set_source(photo)
+        self.artist_photo.setVisible(self.artist_photo.has_photo())
 
     # -- content ----------------------------------------------------------
 
@@ -954,10 +1045,22 @@ class NowPlaying(QWidget):
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
-        side = max(self.ART_MIN, min(self.ART_MAX, int(e.size().width() * 0.32)))
+        w, h = e.size().width(), e.size().height()
+        gap = max(16, min(48, int(w * 0.03)))
+        edge = max(20, min(48, int(w * 0.035)))
+        top = max(24, min(40, int(h * 0.04)))
+        self._outer.setSpacing(gap)
+        self._outer.setContentsMargins(edge, top, edge - 8, top)
+        # The cover scales with the width, and with the height too: under
+        # it sit the name, the artist and the station.
+        side = int(w * 0.30)
+        side = min(side, h - 2 * top - 230)
+        side = max(self.ART_MIN, min(self.ART_MAX, side))
         self.art_label.setFixedSize(side, side)
+        # The column is as wide as the cover and no wider, so a long
+        # title wraps under it instead of pushing the lyrics aside.
+        self._left_col.setFixedWidth(side)
         self._rebuild_art()
-        self._lay_artist_photo()
 
     def paintEvent(self, e):
         p = QPainter(self)
