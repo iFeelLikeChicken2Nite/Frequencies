@@ -161,6 +161,7 @@ def make_pack(dev):
              f" - NEW: upload {packbuild.BIO_NAME} (or press Publish my "
              f"bio fixes to GitHub in your dev build)"))
 
+    make_logo_pack(dev, packbuild)
     missing = packbuild.missing_photos(dev)
     data, manifest = packbuild.photo_pack(dev, talk)
     if data is None:
@@ -191,6 +192,32 @@ def make_pack(dev):
                     "NEW: upload " + ZIP_NAME + " and " + MANIFEST
                     + " (or press Publish my photos to GitHub in your dev "
                     "build)"))
+
+
+def make_logo_pack(dev, packbuild):
+    """photo-pack/frequencies-logo-pack.b32 + logo-pack.json: the band
+    logos (build 141, task 203), the same files Publish my photos sends."""
+    if packbuild.missing_logos(dev):
+        print("!!  some band logos aren't on this computer, so no logo "
+              "pack is made here. Publish from the computer that has them.")
+        return
+    data, manifest = packbuild.logo_pack(dev)
+    if data is None:
+        print("    no band logos yet (Edit this artist… > Logo in your dev "
+              "build)")
+        return
+    path = os.path.join(OUT, packbuild.LOGO_MANIFEST)
+    old = read(path) or {}
+    same = old.get("sha256") == manifest["sha256"]
+    if same:
+        manifest["made"] = old.get("made", manifest["made"])
+    with open(os.path.join(OUT, packbuild.LOGO_NAME), "wb") as f:
+        f.write(data)
+    with open(path, "wb") as f:
+        f.write(packbuild.manifest_bytes(manifest))
+    print(f"    band logos: {manifest['logos']}, {len(data) // 1024} KB - "
+          + ("unchanged" if same else "NEW: press Publish my photos to "
+             "GitHub in your dev build"))
 
 
 def main(argv):

@@ -111,7 +111,7 @@ New modules (all picked up automatically by cp src/*.py)
                   Two windows Winamp never had: skinned history and
                   lyrics, built on PlaylistWindow's chrome.
   theme.py        Palette, stylesheet, accent-follows-artwork. (replaced)
-  nowplaying.py   Full-screen artwork and lyrics.
+  nowplaying.py   Comfort View: artwork, lyrics and artist.
   historypage.py  Identified songs.
   tagsdialog.py   The tag editor the station context menu opens.
                   Superseded by your own StationOptionsDialog. Unused;
