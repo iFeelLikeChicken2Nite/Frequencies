@@ -21,6 +21,7 @@ On top of your typical radio apps that allow you to stream from URLs and browse 
 * Ability to create custom stations from local files, YouTube stations, Twitch streams, and iBroadcast libraries
 * Tags system for easily queuing your desired stations
 * Built in Shazam
+* Option to cover the forced ads you hear on some stations with your own music
 * A regularly updated list of recommended radio stations that are hand picked by me, a human
 * Per station equalizer options
 * Volume equalization across stations
