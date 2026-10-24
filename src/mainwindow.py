@@ -654,6 +654,10 @@ class FrequenciesWindow(Shell):
         import photopack
         photopack.keeper(self.lib.settings).changed.connect(
             self._photo_pack_changed)
+        # New or updated band logos redraw the names on screen, nothing
+        # more (build 144, task 207).
+        photopack.keeper(self.lib.settings).logos_changed.connect(
+            self._refresh_logos)
         # Updates (build 125, task 177): checked at every launch, applied
         # when the app quits; a new build says so once.
         import updater

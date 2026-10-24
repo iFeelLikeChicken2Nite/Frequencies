@@ -6,4 +6,4 @@ The updater compares this with the newest build on the releases repository
 and adds its "what's new" lines to whats_new.json.
 """
 
-BUILD = 143
+BUILD = 144

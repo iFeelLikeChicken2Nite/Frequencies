@@ -534,11 +534,12 @@ class OptionsPage(QWidget):
         self.pack_status.setProperty("role", "secondary")
         self.pack_status.setWordWrap(True)
         check = QPushButton("Check now")
-        check.setEnabled(has_pack and pack.isChecked())
+        # Also looks for new band logos and bio fixes, which come with
+        # the photos switched off (build 144, task 207).
+        check.setEnabled(has_pack)
 
         def toggled(on):
             self._save(photopack.SETTING, bool(on))
-            check.setEnabled(has_pack and on)
             if keeper:
                 keeper.set_enabled(on)
         pack.toggled.connect(toggled)

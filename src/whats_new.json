@@ -1,4 +1,7 @@
 {
+  "144": [
+    "New band logos now show up on their own as soon as they are downloaded, with no need to switch the logo setting off and on. Settings > Check now also looks for new band logos when the photo pack is off."
+  ],
   "143": [
     "Band logos now fade in (sliding up) only once the artist's picture is showing, and fade out (sliding down) while the antenna is up."
   ],

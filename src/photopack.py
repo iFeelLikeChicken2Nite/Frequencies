@@ -64,6 +64,7 @@ AGENT = "Frequencies (radio app)"
 CHECK_AFTER_MS = 60 * 1000
 CHECK_EVERY_MS = 24 * 60 * 60 * 1000
 RETRY_MS = 60 * 60 * 1000           # after a failure
+WATCH_MS = 20 * 1000                # is what's on disk what's on screen?
 
 
 def _log(text):
@@ -188,6 +189,22 @@ def logo_entry(key):
         return {}
     entry["logo"] = path
     return entry
+
+
+def _stamp(folder):
+    """When this pack's index file last changed (None with no pack)."""
+    try:
+        return os.stat(os.path.join(folder, PACK_INDEX)).st_mtime_ns
+    except OSError:
+        return None
+
+
+def pack_stamp():
+    return _stamp(pack_dir())
+
+
+def logo_stamp():
+    return _stamp(logo_dir())
 
 
 def artist_entry(key):
@@ -822,6 +839,11 @@ class Keeper(QObject):
     bio_status = pyqtSignal(str)
     logo_status = pyqtSignal(str)
     changed = pyqtSignal()
+    # The band logos changed on disk (a download, an update, switched
+    # off, or another copy of the app unpacked them). Only the logos on
+    # screen redraw: `changed` also looks the artist up again, which
+    # clears the picture a logo waits for (build 144, task 207).
+    logos_changed = pyqtSignal()
 
     def __init__(self, settings, parent=None):
         super().__init__(parent)
@@ -846,6 +868,12 @@ class Keeper(QObject):
         self._logo_timer = QTimer(self)
         self._logo_timer.setSingleShot(True)
         self._logo_timer.timeout.connect(self.check_logos)
+        self._pack_seen = pack_stamp()
+        self._logo_seen = logo_stamp()
+        self._watch = QTimer(self)
+        self._watch.setInterval(WATCH_MS)
+        self._watch.timeout.connect(self._look_for_changes)
+        self._watch.start()
         self._say(self._resting())
         self._say_bios(self._bio_resting())
         self._say_logos(self._logo_resting())
@@ -955,7 +983,7 @@ class Keeper(QObject):
         self._logo_job = None
         if not self.settings.get(LOGO_SETTING, True):
             if remove(logo_dir()):
-                self.changed.emit()
+                self._logos_on_disk_changed()
             self._say_logos(self._logo_resting())
             return
         if state == "failed":
@@ -964,9 +992,28 @@ class Keeper(QObject):
             self._logo_timer.start(RETRY_MS)
             return
         self._say_logos(self._logo_resting())
-        if state == "updated":
-            self.changed.emit()
+        self._logos_on_disk_changed()
         self._logo_timer.start(CHECK_EVERY_MS)
+
+    def _logos_on_disk_changed(self):
+        """Tell the window when the logos on disk are not the ones it last
+        drew (a new pack, a removed one, or another copy of the app
+        unpacking into the same folder)."""
+        now = logo_stamp()
+        if now != self._logo_seen:
+            self._logo_seen = now
+            self.logos_changed.emit()
+
+    def _look_for_changes(self):
+        """Every few seconds, one stat of each pack's index: a pack that
+        something else unpacked reaches the screen without a toggle."""
+        if self._logo_job is None or not self._logo_job.isRunning():
+            self._logos_on_disk_changed()
+        if self._job is None or not self._job.isRunning():
+            now = pack_stamp()
+            if now != self._pack_seen:
+                self._pack_seen = now
+                self.changed.emit()
 
     def set_logos(self, on):
         """The Settings switch (already saved)."""
@@ -978,6 +1025,7 @@ class Keeper(QObject):
         if self._logo_job is not None:
             self._logo_job.stop()
         remove(logo_dir())
+        self._logo_seen = logo_stamp()
         self._say_logos(self._logo_resting())
 
     def enabled(self):
@@ -1014,6 +1062,7 @@ class Keeper(QObject):
         if self._job is not None:
             self._job.stop()
         if remove():
+            self._pack_seen = pack_stamp()
             self.changed.emit()
         self._say("Off. The pack was deleted.")
 
@@ -1045,6 +1094,7 @@ class Keeper(QObject):
         if not self.settings.get(SETTING):
             # Switched off while it ran: what it unpacked goes too.
             if remove():
+                self._pack_seen = pack_stamp()
                 self.changed.emit()
             self._say(self._resting())
             return
@@ -1054,6 +1104,7 @@ class Keeper(QObject):
             return
         self._say(self._lines("Up to date"))
         if state == "updated":
+            self._pack_seen = pack_stamp()
             self.changed.emit()
         self._timer.start(CHECK_EVERY_MS)
 
