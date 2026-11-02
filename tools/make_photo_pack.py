@@ -93,7 +93,7 @@ def slug(text):
 def ship_addresses():
     own = read(os.path.join(config_dir(), "photo_pack.json")) or {}
     own = {k: str(own.get(k) or "").strip()
-           for k in ("pack", "reports", "art")}
+           for k in ("pack", "reports", "art", "report_service")}
     own = {k: v for k, v in own.items() if v}
     if not own:
         have = read(SHIPPED_ADDRESS) or {}
@@ -103,8 +103,10 @@ def ship_addresses():
         return
     write_json(SHIPPED_ADDRESS, own)
     print("    pack address: " + own.get("pack", "(none)"))
-    print("    report address: " + ("set" if own.get("reports")
+    print("    reports repository: " + ("set" if own.get("reports")
                                     else "(none: thumbs down uses the pack address's repository)"))
+    print("    report address: " + (own.get("report_service") or "(none: "
+                                    "thumbs down opens the browser)"))
     print("    picture link address: " + (own.get("art") or "(none: shared "
                                           "pictures of your own travel as thumbnails)"))
 

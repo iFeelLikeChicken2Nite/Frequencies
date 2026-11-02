@@ -510,10 +510,10 @@ python3 tools/ship_talk_stations.py
 # builds you share can sign in to Twitch chat (build 82, task 92e).
 echo "==> Twitch app Client ID from your dev build"
 python3 tools/ship_twitch_app.py
-# The token that files thumbs-down reports (build 97, task 133): Issues
-# on your reports repository only. Shipped; never printed.
-echo "==> Report token from your dev build"
-python3 tools/ship_report_token.py
+# No build carries a report token since build 151 (tasks 209/212): thumbs
+# down goes through your Cloudflare Worker (cloudflare/report-worker.js).
+# A token file left in src/ by an older build is removed.
+rm -f src/report_token.json
 # Your disabled visualizer presets (task 119), so new users start with
 # the same list.
 echo "==> Disabled visualizer presets from your dev build"
@@ -674,6 +674,10 @@ else
 fi
 
 echo "==> Building AppImage"
+# Last look before anything is packed (tasks 209/212): stops the build if
+# a token of any kind is anywhere in the AppDir.
+echo "==> Checking for tokens in what ships"
+python3 tools/scan_tokens.py AppDir || exit 1
 ARCH="${APP_ARCH}" "${TOOL_CMD}" AppDir "${OUTPUT}"
 
 # A note beside it for "Publish this build as an update" (build 125):

@@ -45,3 +45,89 @@ Open R2 Object Storage > `frequencies-art`, find the file named in the link
   upload, add a rate limit binding named `UPLOAD_LIMIT` to the Worker later
   (optional; the Worker uses it when it's there).
 - Uploading a picture puts it on the internet: anyone with the link can see it.
+
+# Thumbs-down reports (build 151)
+
+No build of the app carries a GitHub token any more (AppImage, Windows
+installer, APK, F-Droid). A thumbs down is sent to a second small Cloudflare
+service of your own (`report-worker.js` in this folder). It keeps the token
+as a secret only Cloudflare can read, checks the report, and files the issue
+on your reports repository. If the service can't be reached, the app opens
+the pre-filled GitHub page in the browser instead, as before.
+
+It is its own Worker, not part of the picture one: it needs no R2 bucket and
+no card, and either one can be set up without the other.
+
+## Set it up once (about 10 minutes, in a web browser)
+
+1. Make a GitHub token for it: github.com > your picture (top right) >
+   **Settings** > **Developer settings** > **Personal access tokens** >
+   **Fine-grained tokens** > **Generate new token**. Name: `Frequencies
+   reports`. Repository access: **Only select repositories**, pick
+   `frequencies-reports`. Permissions > Repository permissions > **Issues**:
+   **Read and write**. Nothing else. Press **Generate token** and keep the
+   page open (you paste it in step 5). Don't paste it anywhere else.
+2. Sign in at https://dash.cloudflare.com (the same free account as the
+   picture links, or a new one).
+3. Open **Workers & Pages**, press **Create**, then **Create Worker** (or
+   "Start with Hello World"). Name it `frequencies-reports` and press
+   **Deploy**.
+4. Press **Edit code**. Delete everything in the editor, then open
+   `cloudflare/report-worker.js` from this folder in a text editor, copy all
+   of it, and paste it in. Press **Deploy**.
+5. Go back to the Worker, open **Settings**, then **Variables and Secrets**,
+   press **Add**. Type: **Secret**. Variable name: `REPORT_TOKEN` (capital
+   letters). Value: the token from step 1. Press **Deploy** (or Save). You
+   can close the GitHub page now.
+6. Only if your reports repository isn't
+   `iFeelLikeChicken2Nite/frequencies-reports`: add one more, Type **Text**,
+   name `REPORT_REPO`, value `<your GitHub name>/<repository name>`.
+7. Copy the Worker's address from its page. It looks like
+   `https://frequencies-reports.<your name>.workers.dev`. Opening it in a
+   browser should say "Frequencies reports."
+8. In your **dev build**: Settings > Lyrics and artists > **Report address**,
+   paste the address, press Enter. Press **Send a test report**: a "Test
+   report from Frequencies" issue should appear on your reports repository
+   (close it).
+9. Build the user AppImage and the Windows installer again, as usual. The
+   build copies the address in, so your users' builds send reports through
+   it. The Android build uses the same address.
+
+Optional, for tighter limits: open **Storage & Databases** > **KV**, press
+**Create**, name it `frequencies-report-limits`; then on the Worker,
+**Settings** > **Bindings** > **Add** > **KV namespace**, variable name
+`LIMITS`, pick that namespace, **Deploy**. Without it the limits below are
+counted per Cloudflare location, which still works, just more loosely.
+
+## What it allows
+
+- At most 20 reports a day from one person (by internet address), 300 a day
+  in all (a text variable `DAILY_CAP` changes that), and one per artist a
+  day: a second report on the same artist the same day is answered "already
+  reported" and files nothing.
+- A report is at most 4 KB of plain text. Links, pictures and @mentions in
+  it are shown as typed, never as links or notifications.
+- If the token stops working (revoked or expired), reports fall back to the
+  browser page. Make a new token (step 1) and replace the secret (step 5); no
+  new build is needed.
+
+## What the app sends (Linux, Windows and Android send the same)
+
+`POST <Report address>/report` with `Content-Type: application/json`:
+
+```json
+{"artist": "Styx", "what": "bio", "source": "Wikipedia",
+ "bio": "first 200 characters of the wrong bio",
+ "photo": "where the photo came from (an address, or 'photo pack, <file>')",
+ "station": "the station playing", "build": "151", "os": "linux"}
+```
+
+- `artist` (required, at most 200 characters), `what` (required): `bio`,
+  `photo`, `both`, or `test` (Settings' "Send a test report").
+- `source`, `bio` (200), `photo` (500), `station` (200), `build` (20) are
+  optional text. `os` is `linux`, `windows`, `android` or `other`.
+- Answers: `201 {"ok": true, "url": "<the issue>"}`; `200 {"ok": true,
+  "already": true}` (that artist was reported today, nothing new filed);
+  anything else (`{"error": "…"}` with 400, 413, 415, 429, 502 or 503) means
+  "not filed": open the pre-filled GitHub new-issue page in the browser.
+- The app still keeps its own one-report-per-artist-per-day rule.

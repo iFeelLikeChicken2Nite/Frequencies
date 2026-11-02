@@ -7,13 +7,13 @@ Run by build-appimage-fedora.sh and build-windows.ps1 last:
 
 writes <file>.json: the build number (src/version.py), Linux or Windows,
 dev or user build, its size and sha256, and whether your dev picks were
-shipped into it (talk stations, Twitch Client ID, report token, disabled
-presets). The dev build's "Publish this build as an update" reads it and
-refuses a dev build, a changed file, or a build missing those picks, so
+shipped into it (talk stations, Twitch Client ID, disabled presets; no
+report token since build 151). The dev build's "Publish this build as an
+update" reads it and refuses a dev build, a changed file, or a build missing those picks, so
 an update never takes them away from the people who installed it.
 
-Nothing secret goes in the note (it says whether the token shipped, not
-the token). Stand-alone on purpose: it runs inside the build box.
+Nothing secret goes in the note. Stand-alone on purpose: it runs inside
+the build box.
 """
 
 import hashlib
@@ -37,15 +37,14 @@ def read(name):
 
 
 def shipped():
-    """Which of the four tools/ship_*.py found something to ship."""
+    """Which of the tools/ship_*.py found something to ship (no report
+    token since build 151)."""
     talk = read("station_overrides.json") or {}
     twitch = read("twitch_app.json") or {}
-    token = read("report_token.json") or {}
     presets = read("visualizer_disabled.json") or {}
     return {
         "talk stations": bool(talk),
         "Twitch Client ID": bool(str(twitch.get("client_id") or "").strip()),
-        "report token": bool(str(token.get("token") or "").strip()),
         "disabled presets": bool(presets.get("presets")),
     }
 

@@ -10,7 +10,7 @@
 # libmpv-2.dll (the sound engine, from shinchiro's mpv builds), projectM
 # and its presets (tools\fetch_projectm_windows.py), your dev build's
 # picks from its Settings (as on Linux: talk stations, Twitch Client ID,
-# report token, disabled presets, photo pack address, bio fixes), then
+# disabled presets, photo pack and report addresses, bio fixes), then
 # PyInstaller with frequencies-windows.spec, then Inno Setup with
 # frequencies.iss. Windows 10 or 11 (tar.exe, winget).
 
@@ -75,7 +75,7 @@ Write-Host "==> projectM and presets"
 
 Write-Host "==> Settings from your dev build"
 # The same picks the Linux build ships (WP3): talk stations, Twitch
-# Client ID, report token (never printed), disabled visualizer presets,
+# Client ID, disabled visualizer presets,
 # and the photo pack and report addresses with your bio fixes.
 # Read from a copy: Python from the Microsoft Store sees its own private
 # AppData, where a stale frequencies folder can hide the real one.
@@ -87,7 +87,10 @@ if (Test-Path $realConfig) {
     # The two publishing tokens are never read by a build tool and must
     # never travel with a build (build 125): the photo-publish token and
     # the release token.
-    foreach ($secret in @("github_token.json", "release_token.json")) {
+    # Nor does any other token: an old report token (no build carries
+    # one since build 151) or your Twitch chat sign-in.
+    foreach ($secret in @("github_token.json", "release_token.json",
+                          "report_token.json", "twitch_chat.json")) {
         Remove-Item (Join-Path $devConfig $secret) -ErrorAction SilentlyContinue
     }
 } else {
@@ -96,7 +99,8 @@ if (Test-Path $realConfig) {
 $env:FREQUENCIES_DEV_CONFIG = $devConfig
 & $py tools\ship_talk_stations.py
 & $py tools\ship_twitch_app.py
-& $py tools\ship_report_token.py
+# No build carries a report token since build 151 (tasks 209/212).
+Remove-Item src\report_token.json -ErrorAction SilentlyContinue
 & $py tools\ship_visualizer_disabled.py
 & $py tools\make_photo_pack.py
 
@@ -106,6 +110,24 @@ if ($Dev) { Set-Content $marker "dev build" } elseif (Test-Path $marker) { Remov
 Write-Host "==> PyInstaller"
 & $py -m PyInstaller --noconfirm --clean frequencies-windows.spec
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
+
+# Last look before the installer is made (tasks 209/212): stops the build
+# if a token of any kind is anywhere in dist\Frequencies. Your own secrets
+# are handed over on stdin, read here from the real AppData (never copied).
+Write-Host "==> Checking for tokens in what ships"
+$secrets = @()
+foreach ($secret in @("github_token.json", "release_token.json",
+                      "report_token.json", "twitch_chat.json",
+                      "twitch_app.json")) {
+    $file = Join-Path $realConfig $secret
+    if (Test-Path $file) {
+        try { $secrets += (Get-Content $file -Raw | ConvertFrom-Json) } catch { }
+    }
+}
+(ConvertTo-Json -InputObject @($secrets) -Depth 5 -Compress) |
+    & $py tools\scan_tokens.py dist\Frequencies --secrets-stdin
+if ($LASTEXITCODE -ne 0) { throw "A token was found in dist\Frequencies; nothing was made to share" }
+Remove-Variable secrets
 
 Write-Host "==> Installer"
 $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
