@@ -93,6 +93,11 @@ class StreamCheck(Job):
         self.send(self.finished_check, self.station_id, ok, reason)
 
 
+
+def _offline_now():
+    import offline
+    return offline.is_offline()
+
 class HealthMonitor(Job):
     """Re-checks stations that are currently flagged as down.
 
@@ -149,6 +154,8 @@ class HealthMonitor(Job):
                 waited = 0
                 time.sleep(0.5)
                 continue
+            if waited >= self.interval and _offline_now():
+                waited = 0              # offline (task 214): not now
             if waited >= self.interval:
                 waited = 0
                 for station_id, url in list(self._targets):

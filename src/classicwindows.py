@@ -201,13 +201,25 @@ class LyricsWindow(_RenamedList):
         """
         if 0 <= index < len(getattr(self, "_timed", [])):
             self.resync_requested.emit(int(self._timed[index][0]))
+        elif index == 2 and getattr(self, "_search", ""):
+            from PyQt5.QtCore import QUrl
+            from PyQt5.QtGui import QDesktopServices
+            QDesktopServices.openUrl(QUrl(self._search))
 
-    def set_lyrics(self, lines, message=None):
-        """lines: [(ms, text)] or plain strings. A message replaces them."""
+    SEARCH_ROW = "» Search the web for these lyrics"
+
+    def set_lyrics(self, lines, message=None, search=""):
+        """lines: [(ms, text)] or plain strings. A message replaces them;
+        with `search` (task 213) a row under it opens a web search for the
+        song when double-clicked."""
+        self._search = search or ""
         if not lines:
             self._timed = []
             self._line = -1
-            self.set_stations([message or "No lyrics for this track."], -1)
+            rows = [message or "No lyrics for this track."]
+            if self._search:
+                rows += ["", self.SEARCH_ROW]
+            self.set_stations(rows, -1)
             return
         if isinstance(lines[0], (tuple, list)):
             self._timed = [(int(t), str(s)) for t, s in lines]

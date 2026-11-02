@@ -77,8 +77,8 @@ FIRST_CHECK_MS = 15000          # after launch, once the window is settled
 CHECKED = "update_checked_at"   # settings: last successful check
 LAST_RUN = "update_last_build"  # settings: the build that ran last time
 TRIES = 2                       # Windows: installer runs at launch, at most
-SHIPPED = ("talk stations", "Twitch Client ID", "report token",
-           "disabled presets")
+# No "report token" since build 151 (tasks 209/212): no build carries one.
+SHIPPED = ("talk stations", "Twitch Client ID", "disabled presets")
 
 _session_ending = False
 
@@ -504,6 +504,15 @@ class Updater(QObject):
 
     def check(self, quiet=False):
         if self._job is not None and self._job.isRunning():
+            return
+        import offline
+        if offline.is_offline():
+            # Offline (task 214): asked again when it may be back.
+            if quiet:
+                QTimer.singleShot(60 * 1000, lambda: self.check(quiet=True))
+            else:
+                self._say("You're offline. Try again once the internet is "
+                          "back.")
             return
         url = manifest_url()
         if not url:

@@ -664,6 +664,21 @@ class FrequenciesWindow(Shell):
         updates = updater.updater(self.lib.settings, self)
         updates.ready.connect(self.notify)
         updates.start()
+        # Offline (build 151, task 214): internet stations gray out and
+        # leave the rotation; local files keep playing.
+        import offline
+        self._offline_watch = offline.Watch(self)
+        self._offline_watch.changed.connect(self._offline_changed)
+        self._offline_stopped = None
+        self._offline_watch.start()
+        # Thumbs-down reports waiting to be sent (build 152, task 215).
+        import photopack
+        from PyQt5.QtCore import QUrl
+        from PyQt5.QtGui import QDesktopServices
+        self._reports = photopack.ReportQueue(
+            self.lib.settings, self.lib.save_settings,
+            lambda address: QDesktopServices.openUrl(QUrl(address)), self)
+        QTimer.singleShot(20000, self._reports.kick)
         QTimer.singleShot(3000, self._updated_note)
         self.history_page.favourited.connect(
             lambda key, on: (self.lib.set_favourite(key, on),
@@ -2786,6 +2801,9 @@ class FrequenciesWindow(Shell):
             station = (self.playback.current
                        or self.lib.station_by_id(
                            self.lib.settings.get("last_station_id")))
+            if self.playback.offline_out(station):
+                # Refused (task 214): the button goes back to Play.
+                self.player.set_playing(False)
             self.playback.play(station)
         else:
             # For radio, stop and pause are the same gesture — mpv drops the
@@ -2814,6 +2832,65 @@ class FrequenciesWindow(Shell):
             # first and being overwritten a moment later is why this
             # looked like it did nothing at all.
             QTimer.singleShot(0, lambda s=station: self._settle_paused(s))
+
+    def _offline_changed(self, offline_now):
+        """The internet went away or came back (build 151, task 214)."""
+        if not offline_now and getattr(self, "_reports", None) is not None:
+            self._reports.kick()
+        if offline_now:
+            # Failures in the last minute were the connection going, not
+            # the stations: taken back, so nothing stays marked down.
+            if storage.forget_recent_failures(60):
+                storage.save_health(self.lib.health)
+        self.reload()
+        if self._classic is not None:
+            self._classic.refresh_playlist()
+        current = self.playback.current
+        playing = bool(getattr(self.player, "_playing", False))
+        if offline_now:
+            if not (playing and current
+                    and self.playback.offline_out(current)):
+                self.notify("You're offline. Frequencies that need the "
+                            "internet are grayed out until it's back.")
+                return
+            local = self._offline_fallback()
+            if local is not None:
+                self.notify(f"You're offline, so Frequencies switched to "
+                            f"{storage.station_display_name(local)} (local "
+                            f"files).")
+                self.playback.play(local)
+                return
+            self._offline_stopped = current.get("id")
+            self._on_play_toggled(False)
+            self.player.set_playing(False)
+            self.notify(f"You're offline, so "
+                        f"{storage.station_display_name(current)} stopped. "
+                        f"It starts again when the internet is back.")
+            return
+        stopped, self._offline_stopped = self._offline_stopped, None
+        self.notify("Back online: every frequency is available again.")
+        if (stopped and not getattr(self.player, "_playing", False)
+                and (self.playback.current or {}).get("id") == stopped):
+            station = self.lib.station_by_id(stopped)
+            if station is not None:
+                self.player.set_playing(True)
+                self.playback.play(station)
+
+    def _offline_fallback(self):
+        """A local files station to move to: the next one in the list on
+        screen, else any (task 214)."""
+        ids = [i for i in self.visible_ids() if i]
+        here = (self.playback.current or {}).get("id")
+        if here in ids:
+            at = ids.index(here)
+            ids = ids[at + 1:] + ids[:at]
+        others = [s.get("id") for s in self.lib.stations
+                  if s.get("id") not in ids]
+        for station_id in ids + others:
+            station = self.lib.station_by_id(station_id)
+            if station is not None and not storage.needs_internet(station):
+                return station
+        return None
 
     def _settle_paused(self, station):
         """What a paused station should look like.
@@ -2905,7 +2982,17 @@ class FrequenciesWindow(Shell):
         nothing to be gained by being clever, and it happens once when
         somebody chooses it rather than on every song.
         """
+        source = theme.accent_source(
+            self.lib.settings.get("accent_source", "artwork"))
+        accent = getattr(self, "accent", None)
+        held = accent.color() if accent is not None else None
         theme.apply_theme(key)
+        if source == "theme" and held is not None:
+            # "Match the theme" (task 208): the new sheet keeps the color
+            # on screen now, and the accent fades from it to the new
+            # theme's own, like an artwork change does.
+            theme.T["accent"] = held.name()
+            theme.T["on_accent"] = theme.on_accent_for(held)
         app = QApplication.instance()
         app.setPalette(theme.palette())
         app.setStyleSheet(theme.stylesheet())
@@ -2913,10 +3000,10 @@ class FrequenciesWindow(Shell):
         # painted widgets need telling to redraw.
         for widget in getattr(self.accent, "_quick", []):
             widget.setStyleSheet("")
-        if getattr(self, "accent", None) is not None:
+        if accent is not None:
             self.accent.set_source(
-                self.lib.settings.get("accent_source", "artwork"),
-                self.lib.settings.get("accent_fixed"))
+                source, self.lib.settings.get("accent_fixed"),
+                animate=(source == "theme"))
         # Widgets that keep colours of their own have to be asked; a new
         # stylesheet does not reach a background set in code.
         self.panel.restyle()
@@ -3138,30 +3225,47 @@ class FrequenciesWindow(Shell):
         """A thumb, and a pause before a thumbs-down is believed.
 
         Fifteen seconds because the first press is often a mis-click or a
-        change of mind: someone taps down, looks again, and taps up. Only
-        what is still selected when the timer expires gets written.
+        change of mind: someone taps down, looks again, and taps up. Build
+        152 (task 215): everything the report needs is written down at the
+        press, so the next song or station can't change or cancel it. Only
+        a thumbs-up on the same artist takes it back.
         """
-        self._pending_verdict = (verdict, self.panel.heading.text().strip())
-        self._pending_what = ""
-        if verdict == "down":
-            # Build 98, task 136: which part is wrong. Cancel takes the
-            # thumb back and reports nothing.
-            self._pending_what = self._ask_what_wrong(self._pending_verdict[1])
-            if not self._pending_what:
-                self._pending_verdict = ("", "")
-                if getattr(self, "_verdict_timer", None) is not None:
-                    self._verdict_timer.stop()
+        artist = self.panel.heading.text().strip()
+        pending = getattr(self, "_pending_verdict", None)
+        if verdict != "down":
+            if pending and pending["artist"] == artist:
+                self._pending_verdict = None
+                self._verdict_timer.stop()
+            return
+        if not artist:
+            return
+        if pending and pending["artist"] != artist:
+            self._store_verdict()           # the earlier one goes out now
+        current = getattr(self.playback, "current", None)
+        snap = {"artist": artist,
+                "source": self._artist_source,
+                "bio": self.panel.artist.bio.text().strip(),
+                "photo_path": getattr(self.panel, "_photo_path", ""),
+                "station": (storage.station_display_name(current)
+                            if current else "")}
+        # Build 98, task 136: which part is wrong. Cancel takes the thumb
+        # back and reports nothing. The question is about the artist it was
+        # pressed on, whatever plays meanwhile.
+        snap["what"] = self._ask_what_wrong(artist)
+        if not snap["what"]:
+            self._pending_verdict = None
+            if getattr(self, "_verdict_timer", None) is not None:
+                self._verdict_timer.stop()
+            if self.panel.heading.text().strip() == artist:
                 self.panel.clear_verdict()
-                return
+            return
+        self._pending_verdict = snap
         if getattr(self, "_verdict_timer", None) is None:
             self._verdict_timer = QTimer(self)
             self._verdict_timer.setSingleShot(True)
             self._verdict_timer.setInterval(15000)
             self._verdict_timer.timeout.connect(self._store_verdict)
-        if verdict == "down":
-            self._verdict_timer.start()
-        else:
-            self._verdict_timer.stop()
+        self._verdict_timer.start()
 
     def _ask_what_wrong(self, artist):
         """Bio, Photo or Both? Returns "bio", "photo", "both" or "" when
@@ -3179,17 +3283,19 @@ class FrequenciesWindow(Shell):
         return buttons.get(box.clickedButton(), "")
 
     def _store_verdict(self):
-        """Record that this artist's lookup was wrong."""
-        verdict, artist = getattr(self, "_pending_verdict", ("", ""))
-        if verdict != "down" or not artist:
+        """Record that this artist's lookup was wrong and queue the report,
+        from what was snapshotted at the press."""
+        snap = getattr(self, "_pending_verdict", None)
+        self._pending_verdict = None
+        if getattr(self, "_verdict_timer", None) is not None:
+            self._verdict_timer.stop()
+        if not snap:
             return
-        if artist != self.panel.heading.text().strip():
-            return              # the song moved on; the verdict was not kept
+        artist, what = snap["artist"], snap["what"]
         reports = self.lib.settings.get("artist_reports") or {}
         entry = reports.get(artist.lower()) or {}
         entry["wrong"] = int(entry.get("wrong", 0)) + 1
-        entry["source"] = self._artist_source
-        what = getattr(self, "_pending_what", "") or "both"
+        entry["source"] = snap["source"]
         entry["what"] = what
         reports[artist.lower()] = entry
         self.lib.settings["artist_reports"] = reports
@@ -3198,18 +3304,12 @@ class FrequenciesWindow(Shell):
         # out with the next photo pack.
         import photopack
         import re
-        source = re.sub(r"<[^>]+>", "", self._artist_source or "").strip()
-        bio = self.panel.artist.bio.text().strip()
-        from PyQt5.QtCore import QUrl
-        from PyQt5.QtGui import QDesktopServices
+        source = re.sub(r"<[^>]+>", "", snap["source"] or "").strip()
         photo = ""
         if what in ("photo", "both"):
-            photo = photopack.photo_link(
-                artist, getattr(self.panel, "_photo_path", ""))
-        photopack.report(
-            self.lib.settings, artist, source, bio,
-            lambda address: QDesktopServices.openUrl(QUrl(address)),
-            what, photo)
+            photo = photopack.photo_link(artist, snap["photo_path"])
+        self._reports.add(artist, source, snap["bio"], what, photo,
+                          snap["station"])
         self.lib.save_settings()
 
     def _refresh_logos(self):
@@ -4196,6 +4296,7 @@ class FrequenciesWindow(Shell):
                else "no tray icon is showing - Settings > System: Show a tray "
                     "icon")
         self._tray_log(f"closing the window quits ({why})")
+        self._store_verdict()      # a thumbs down still waiting is kept
         super().closeEvent(event)
 
     @staticmethod
@@ -4765,13 +4866,16 @@ class FrequenciesWindow(Shell):
     def on_busy(self, lyrics=None, artist=None):
         self.panel.set_busy(lyrics, artist)
 
-    def on_lyrics(self, lines, message=None):
+    def on_lyrics(self, lines, message=None, search=""):
+        """`search`: a web search address offered under the message when
+        the lyrics were busy or not found (build 151, task 213)."""
         self._lyrics = list(lines or [])
+        self._lyrics_search = "" if lines else (search or "")
         self.panel.set_busy(lyrics=False)
         if self._classic is not None:
-            self._classic.set_lyrics(lines, message)
-        self.now_playing.set_lyrics(lines, message)
-        self.panel.set_lyrics(lines, message)
+            self._classic.set_lyrics(lines, message, self._lyrics_search)
+        self.now_playing.set_lyrics(lines, message, self._lyrics_search)
+        self.panel.set_lyrics(lines, message, self._lyrics_search)
         self.panel.set_available(self._lyrics, self._bio)
         if self._lyrics:
             # Clippy's tip 13, the first time lyrics are found (task 155).

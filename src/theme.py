@@ -61,6 +61,27 @@ T = {
 FONT_STACK = '"Inter", "SF Pro Text", "Cantarell", "Noto Sans", sans-serif'
 
 
+# The shell theme last applied (its key), for "Match the theme" (task 208).
+CURRENT_THEME = None
+
+# Settings "accent_source" values. The Android port reads and writes the
+# same key, so the values mean the same there; anything else (a newer
+# phone's choice in a backup) is shown and treated as "artwork" and never
+# written back (task 208).
+ACCENT_SOURCES = ("artwork", "desktop", "fixed", "theme")
+
+
+def accent_source(value):
+    """A saved accent_source, or "artwork" when it is not one we know."""
+    return value if value in ACCENT_SOURCES else "artwork"
+
+
+def theme_accent():
+    """The current shell theme's own accent token (task 208)."""
+    import themes
+    return QColor(themes.tokens(CURRENT_THEME or themes.DEFAULT)["accent"])
+
+
 def apply_theme(key):
     """Swap the surface and text colors for one of the named schemes.
 
@@ -70,6 +91,8 @@ def apply_theme(key):
     """
     import themes
 
+    global CURRENT_THEME
+    CURRENT_THEME = key
     T.update(themes.tokens(key))
     T["on_accent"] = on_accent_for(T["accent"])
     T["light"] = themes.is_light(key)
@@ -278,6 +301,10 @@ QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QDoubleSpinBox {{
     selection-background-color: {accent};
     selection-color: {on_accent};
 }}
+/* Link-style buttons ("Previously featured frequencies…", "Search the web
+   for these lyrics", build 151): the accent of the moment. */
+QPushButton[link="true"]:hover {{ color: {accent}; }}
+QPushButton[link="true"][accent="true"] {{ color: {accent}; }}
 """
 
 
@@ -413,6 +440,7 @@ QPushButton[link="true"] {{
     padding: 0;
 }}
 QPushButton[link="true"]:hover {{ color: {accent}; }}
+QPushButton[link="true"][accent="true"] {{ color: {accent}; }}
 
 QPushButton[floating="true"] {{
     background: {bg3};
@@ -986,17 +1014,22 @@ class AccentController(QObject):
     def color(self) -> QColor:
         return QColor(self._current)
 
-    def set_source(self, mode, fixed=None):
-        """"artwork", "desktop" or "fixed".
+    def set_source(self, mode, fixed=None, animate=False):
+        """"artwork", "desktop", "fixed" or "theme".
 
         Artwork is the default because it is the only one that says
         anything — but a color that changes every three minutes is not
         for everyone, and a desktop that already has an accent should be
         allowed to win.
         """
-        self._source = mode or "artwork"
+        self._source = accent_source(mode)
         self._fixed = QColor(fixed) if fixed else None
-        if self._source == "desktop":
+        if self._source == "theme":
+            # The theme's accent as the theme drew it, not clamped like an
+            # artwork color: a light theme's darker accent is on purpose.
+            # A theme change fades to it (animate), like the artwork does.
+            self.set_color(theme_accent(), animate=animate, exact=True)
+        elif self._source == "desktop":
             self.set_color(desktop_accent(), animate=False)
         elif self._source == "fixed" and self._fixed is not None:
             self.set_color(self._fixed, animate=False)
@@ -1032,7 +1065,7 @@ class AccentController(QObject):
     FADE_STEP = 33              # ms between frames, about 30fps
     SHEET_EVERY = 5             # frames between stylesheet rewrites
 
-    def set_color(self, colour: QColor, animate=True):
+    def set_color(self, colour: QColor, animate=True, exact=False):
         """Travel to the new color rather than jumping to it.
 
         A second, at thirty frames, so the interface changes color the
@@ -1042,7 +1075,7 @@ class AccentController(QObject):
         because those are answers to a question the user just asked and
         should not appear to lag behind them.
         """
-        colour = readable_accent(QColor(colour))
+        colour = QColor(colour) if exact else readable_accent(QColor(colour))
         if self._distance(colour, self._to) < self.MIN_SHIFT:
             return
         self._to = colour
@@ -1072,7 +1105,10 @@ class AccentController(QObject):
         # Ease out: most of the travel early, settling at the end. A
         # linear fade reads as a wipe.
         eased = 1.0 - (1.0 - t) ** 3
-        step = _blend(self._from, self._to, eased)
+        # The last frame is the target itself: HSL rounding left "Match
+        # the theme" a shade off the theme's own accent (task 208).
+        step = QColor(self._to) if done else _blend(self._from, self._to,
+                                                     eased)
 
         # The stylesheet is the expensive part — about eleven
         # milliseconds — so it is rewritten a few times across the second

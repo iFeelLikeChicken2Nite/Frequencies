@@ -573,7 +573,10 @@ class OptionsPage(QWidget):
                     ("pack", "Photo pack address",
                      "https://github.com/<you>/<repo>/releases/latest/"
                      "download/photo-pack.json"),
-                    ("reports", "Report address",
+                    ("report_service", "Report address",
+                     "https://<your report worker>.workers.dev "
+                     "(thumbs-down reports)"),
+                    ("reports", "Reports repository",
                      "https://github.com/<you>/<repo> (blank: the photo "
                      "pack's repository)"),
                     ("art", "Picture link address",
@@ -595,32 +598,25 @@ class OptionsPage(QWidget):
                 lay.addWidget(_row(QLabel(label), field))
             note = QLabel(
                 "Dev build only. None of these addresses is a secret: the "
-                "builds you share carry them. Thumbs-down reports are filed "
-                "on the report address's repository. Shared pictures that "
+                "builds you share carry them. Thumbs-down reports go to the "
+                "report address (your Cloudflare Worker, which files them on "
+                "your reports repository); if it can't be reached, the "
+                "repository's new-issue page opens instead. Shared pictures that "
                 "have no address online are uploaded to the picture link "
                 "address, so QR codes can carry a link to them.")
             note.setProperty("role", "secondary")
             note.setWordWrap(True)
             lay.addWidget(note)
-            self._build_report_token(lay)
+            self._build_test_report(lay)
             self._build_publish(lay)
             self._build_publish_update(lay)
         self.lay.addWidget(box)
 
-    def _build_report_token(self, lay):
-        """Dev builds: the token that files thumbs-down reports (build 97,
-        task 133). Shipped in the builds you share, so it must only be able
-        to add issues to the reports repository."""
+    def _build_test_report(self, lay):
+        """Dev builds: send a test report through the report Worker (build
+        151, tasks 209/212). No build carries a report token any more: the
+        Worker holds it (cloudflare/report-worker.js)."""
         import photopack
-        from PyQt5.QtWidgets import QLineEdit
-        field = QLineEdit(photopack.dev_report_token())
-        field.setEchoMode(QLineEdit.Password)
-        field.setPlaceholderText("github_pat_… (Issues only, reports "
-                                 "repository only)")
-        field.setMinimumWidth(420)
-        field.editingFinished.connect(
-            lambda: photopack.save_report_token(field.text()))
-        lay.addWidget(_row(QLabel("Report token"), field))
         test = QPushButton("Send a test report")
         status = QLabel("")
         status.setProperty("role", "secondary")
@@ -628,7 +624,6 @@ class OptionsPage(QWidget):
         lay.addWidget(_row(test, status))
 
         def run():
-            photopack.save_report_token(field.text())
             status.setText("Sending…")
             test.setEnabled(False)
             self._test_job = photopack.test_report(
@@ -639,15 +634,6 @@ class OptionsPage(QWidget):
             if self._test_job is None:
                 test.setEnabled(True)
         test.clicked.connect(run)
-        note = QLabel(
-            "The token the builds you share use to file the reports. "
-            "github.com > Settings > Developer settings > Fine-grained "
-            "tokens > Generate, only your reports repository, "
-            "Issues: Read and write, nothing else. It ships in your next "
-            "build; a leaked one can only add issues, and you can revoke it.")
-        note.setProperty("role", "secondary")
-        note.setWordWrap(True)
-        lay.addWidget(note)
 
     def _build_publish(self, lay):
         """Dev builds: send your photos (base32 twice) and your bio fixes
@@ -1315,7 +1301,9 @@ class OptionsPage(QWidget):
 
     ACCENT_CHOICES = [("artwork", "From the artwork"),
                       ("desktop", "Match my desktop"),
-                      ("fixed", "A color I choose")]
+                      ("fixed", "A color I choose"),
+                      # Same key and value as the Android port (task 208).
+                      ("theme", "Match the theme")]
 
     SLEEP_ACTIONS = [("fade", "Fade to silence"),
                      ("switch", "Switch to another frequency"),

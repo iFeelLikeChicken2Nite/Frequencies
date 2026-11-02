@@ -349,6 +349,7 @@ def featured_stations(cache_dir=None, force=False):
         except Exception:  # noqa: BLE001
             cached = None
         if not force and cached and cached.get("date") == today:
+            _note_seen(cache_dir, cached.get("stations", []))
             return [_featured_entry(item) for item in cached.get("stations", [])]
 
     try:
@@ -375,8 +376,19 @@ def featured_stations(cache_dir=None, force=False):
                 json.dump({"date": today, "stations": stations}, handle)
         except Exception:  # noqa: BLE001
             pass
+    _note_seen(cache_dir, stations)
 
     return [_featured_entry(item) for item in stations]
+
+
+def _note_seen(cache_dir, stations):
+    """Every list this install is shown goes into the previously featured
+    history (build 151, task 211), so it works offline too."""
+    try:
+        import featuredhistory
+        featuredhistory.note_seen(cache_dir, stations)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _featured_entry(item):

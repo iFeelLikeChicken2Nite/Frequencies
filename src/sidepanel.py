@@ -1154,8 +1154,8 @@ class LyricsColumn(QWidget):
         if self.chat_on:
             self.busy.stop()
 
-    def set_lyrics(self, lines, message=None):
-        self.view.set_lyrics(lines, message)
+    def set_lyrics(self, lines, message=None, search=""):
+        self.view.set_lyrics(lines, message, search)
 
     def set_position(self, ms):
         self.view.set_position(ms)
@@ -2476,8 +2476,8 @@ class SidePanel(QWidget):
         self.heading.setToolTip(
             f"{song} — {artist}" if song and artist else (song or artist))
 
-    def set_lyrics(self, lines, message=None):
-        self.lyrics.set_lyrics(lines, message)
+    def set_lyrics(self, lines, message=None, search=""):
+        self.lyrics.set_lyrics(lines, message, search)
 
     def set_chat(self, on):
         """A Twitch station's chat where the lyrics go (task 78): the

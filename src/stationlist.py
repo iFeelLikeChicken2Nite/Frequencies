@@ -15,7 +15,8 @@ import os
 import re
 import math
 
-from PyQt5.QtCore import (QAbstractListModel, QElapsedTimer, QModelIndex,
+from PyQt5.QtCore import (QAbstractListModel, QElapsedTimer, QEvent,
+                          QModelIndex,
                           QPersistentModelIndex, QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer,
                           pyqtSignal)
 from PyQt5.QtGui import (QColor, QFont, QFontMetrics, QImage, QPainter, QPainterPath,
@@ -753,6 +754,11 @@ KIND_GLYPH = {
 }
 
 
+# How much a station that needs the internet fades while offline (task 214).
+OFFLINE_OPACITY = 0.38
+OFFLINE_TIP = "Needs the internet, and you're offline right now."
+
+
 class StationDelegate(QStyledItemDelegate):
 
     COMFORTABLE = 56
@@ -889,6 +895,11 @@ class StationDelegate(QStyledItemDelegate):
             p.save()
             p.setOpacity(eased)
             p.translate(0, int(view.ROW_RISE * (1.0 - eased)))
+        offline_dim = bool(st.get("_offline"))
+        if offline_dim:
+            # Needs the internet, which is gone (task 214): grayed out.
+            p.save()
+            p.setOpacity(p.opacity() * OFFLINE_OPACITY)
 
         p.save()
         p.setRenderHint(QPainter.Antialiasing)
@@ -1009,6 +1020,8 @@ class StationDelegate(QStyledItemDelegate):
                        fm_sub.elidedText(sub, Qt.ElideRight, avail))
 
         p.restore()
+        if offline_dim:
+            p.restore()
         if progress < 1.0:
             # Matches the save() taken when the row was still arriving.
             p.restore()
@@ -1199,6 +1212,11 @@ class StationGridDelegate(QStyledItemDelegate):
             p.save()
             p.setOpacity(eased)
             p.translate(0, int(view.ROW_RISE * (1.0 - eased)))
+        offline_dim = bool(st.get("_offline"))
+        if offline_dim:
+            # Needs the internet, which is gone (task 214): grayed out.
+            p.save()
+            p.setOpacity(p.opacity() * OFFLINE_OPACITY)
 
         p.save()
         p.setRenderHint(QPainter.Antialiasing)
@@ -1261,6 +1279,12 @@ class StationGridDelegate(QStyledItemDelegate):
                        Qt.AlignLeft | Qt.AlignVCenter,
                        fm_sub.elidedText(sub, Qt.ElideRight, self.TILE_W))
         p.restore()
+        if offline_dim:
+            p.restore()
+        if progress < 1.0:
+            # Matches the save() taken while the tile was still arriving
+            # (missing before 151: arriving tiles left the painter shifted).
+            p.restore()
 
     KIND_BADGE = 16
 
@@ -1406,6 +1430,18 @@ class StationList(QListView):
 
     def set_stations(self, stations):
         self.model_.set_stations(stations)
+
+    def viewportEvent(self, event):
+        """A grayed-out row says why when pointed at (task 214)."""
+        if event.type() == QEvent.ToolTip:
+            index = self.indexAt(event.pos())
+            row = self.model_.station_at(index.row()) if index.isValid() \
+                else None
+            if row and row.get("_offline"):
+                from PyQt5.QtWidgets import QToolTip
+                QToolTip.showText(event.globalPos(), OFFLINE_TIP, self)
+                return True
+        return super().viewportEvent(event)
 
     def filter(self, text="", tags=(), exclude=()):
         return self.model_.apply_filter(text, tags, exclude)

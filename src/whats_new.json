@@ -1,4 +1,14 @@
 {
+  "152": [
+    "A thumbs down is no longer lost if you open another station right after. The report is saved, sent in the background, and tried again later if you're offline."
+  ],
+  "151": [
+    "Settings > Appearance > Accent color has a new choice, \"Match the theme\": the accent takes the current theme's own color and follows it when you switch themes.",
+    "Add Frequency has a \"Previously featured frequencies…\" link next to the curated list. It shows every station featured before, with when it was featured, so you can preview it or add it.",
+    "When lyrics can't be found, or the lyrics service is busy, a \"Search the web for these lyrics\" link opens a web search for the song.",
+    "Offline mode: when the internet drops, stations that need it are grayed out and skipped, and Frequencies switches to a local files station if you have one. Everything comes back on its own once you're online again.",
+    "Reports now go through a safer route."
+  ],
   "144": [
     "New band logos now show up on their own as soon as they are downloaded, with no need to switch the logo setting off and on. Settings > Check now also looks for new band logos when the photo pack is off."
   ],

@@ -1414,7 +1414,16 @@ class PlaylistWindow(_SkinnedWindow):
                 faded.setAlpha(110)
                 painter.fillRect(x - 1, top - 1, width, self._row_height,
                                  faded)
-            painter.setPen(current if index == self.current else normal)
+            pen = current if index == self.current else normal
+            if index in getattr(self, "dimmed", ()):
+                # Needs the internet while offline (task 214): the
+                # skin's text color, most of the way to its background.
+                pen = QColor(pen)
+                back = QColor(self.skin.color("normalbg", "#000000"))
+                pen = QColor((pen.red() * 2 + back.red() * 3) // 5,
+                             (pen.green() * 2 + back.green() * 3) // 5,
+                             (pen.blue() * 2 + back.blue() * 3) // 5)
+            painter.setPen(pen)
             painter.drawText(
                 QRect(x, top, width, self._row_height),
                 # Lyrics sit in the middle, the way a song's words are

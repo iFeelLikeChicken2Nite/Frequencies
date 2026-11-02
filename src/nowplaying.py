@@ -290,12 +290,47 @@ class LyricsView(QScrollArea):
             w.setParent(None)
         self._lines.clear()
         self._current = -1
+        link = getattr(self, "_search_link", None)
+        if link is not None and link.isVisibleTo(self):
+            link.hide()
+            self._lay.removeWidget(link)
+
+    SEARCH_TEXT = "Search the web for these lyrics"
+
+    def _show_search(self, url):
+        """A link under "No lyrics found" / "busy" that opens a web search
+        for the song (build 151, task 213). Made once, kept as a hidden
+        child between songs; never in `_lines` (those are LyricLines)."""
+        link = getattr(self, "_search_link", None)
+        if link is None:
+            from PyQt5.QtWidgets import QPushButton
+            link = self._search_link = QPushButton(self.SEARCH_TEXT,
+                                                   self._inner)
+            link.setProperty("link", True)
+            link.setProperty("accent", True)
+            link.setCursor(Qt.PointingHandCursor)
+            link.setFocusPolicy(Qt.TabFocus)
+            link.setStyleSheet("font-size: 12px; padding-top: 8px;")
+            link.clicked.connect(self._open_search)
+            link.hide()
+        self._search_url = url
+        link.setToolTip(url)
+        self._lay.insertWidget(max(0, self._lay.count() - 1), link, 0,
+                               Qt.AlignHCenter)
+        link.show()
+
+    def _open_search(self):
+        url = getattr(self, "_search_url", "")
+        if url:
+            from PyQt5.QtCore import QUrl
+            from PyQt5.QtGui import QDesktopServices
+            QDesktopServices.openUrl(QUrl(url))
 
     def _add_line(self, widget):
         """Lines go above the credit, which stays last."""
         self._lay.insertWidget(max(0, self._lay.count() - 1), widget)
 
-    def set_lyrics(self, lines, message=None):
+    def set_lyrics(self, lines, message=None, search=""):
         """The words, all of them, evenly.
 
         Lines arrive either bare or as (seconds, text). Bare ones are
@@ -310,6 +345,11 @@ class LyricsView(QScrollArea):
             placeholder.set_state(False, False)
             self._add_line(placeholder)
             self._lines.append((None, placeholder))
+            if search:
+                # The message sits right on top of its link, not in the
+                # middle of a tall box with the link far below it.
+                placeholder.setAlignment(Qt.AlignHCenter | Qt.AlignBottom)
+                self._show_search(search)
             self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             return
 
@@ -922,8 +962,8 @@ class NowPlaying(QWidget):
         """Lines go above the credit, which stays last."""
         self._lay.insertWidget(max(0, self._lay.count() - 1), widget)
 
-    def set_lyrics(self, lines, message=None):
-        self.lyrics.set_lyrics(lines, message)
+    def set_lyrics(self, lines, message=None, search=""):
+        self.lyrics.set_lyrics(lines, message, search)
 
     def set_position(self, ms):
         """Pass the clock down to the lyrics.

@@ -31,6 +31,11 @@ import storage
 # Library
 # --------------------------------------------------------------------------
 
+def _offline_now():
+    import offline
+    return offline.is_offline()
+
+
 class Library:
     def __init__(self, stations, settings, history, health=None):
         self.stations = stations
@@ -115,6 +120,8 @@ class Library:
         entry = storage.health_for(self.health, station.get("id"))
         return {
             "_down": bool(entry and entry.get("down")),
+            # Grayed out while offline (build 151, task 214).
+            "_offline": _offline_now() and storage.needs_internet(station),
             "id": station.get("id"),
             "name": storage.station_display_name(station),
             "location": self.subtitle(station),
@@ -257,12 +264,25 @@ class Playback:
 
     # -- playing -----------------------------------------------------------
 
+    def offline_out(self, station):
+        """Offline, and this station needs the internet (build 151, task
+        214): it can't be started and the rotation passes it by."""
+        if not station:
+            return False
+        import offline
+        return offline.is_offline() and storage.needs_internet(station)
+
     def play(self, station):
         # Read once and cleared at once, so it can never leak into the
         # next play() — which may be you pressing a station.
         between = self._between_songs
         self._between_songs = False
         if not station:
+            return
+        if self.offline_out(station):
+            self.on_notice(f"You're offline. "
+                           f"{storage.station_display_name(station)} needs "
+                           f"the internet; local files still play.")
             return
         self._twitch_watch.set()
         self._twitch_playing = None
@@ -1110,6 +1130,11 @@ class Playback:
         if not ids:
             return
         here = self.current.get("id") if self.current else None
+        # Offline (task 214): only what plays without the internet is in
+        # the rotation until the connection is back.
+        ids = self._online_only(ids, here)
+        if not ids:
+            return
         if self.lib.settings.get("shuffle") and len(ids) > 1:
             pick = self._rng.choice(self._shuffle_pool(ids, here) or
                                     [i for i in ids if i != here] or ids)
@@ -1122,6 +1147,23 @@ class Playback:
                 return
         self.play(self.lib.station_by_id(pick))
         self.on_moved()
+
+    def _online_only(self, ids, here):
+        """`ids` less the stations that need the internet, while offline.
+        The station playing stays in, so the order still counts from it."""
+        import offline
+        if not offline.is_offline():
+            return ids
+        kept = [i for i in ids if i == here
+                or not storage.needs_internet(self.lib.station_by_id(i))]
+        if [i for i in kept if i != here]:
+            return kept
+        if here in kept and not self.offline_out(self.lib.station_by_id(here)):
+            return [here]               # the one local station: again
+        self.on_notice("You're offline, and no local files station is in "
+                       "this list. Everything comes back when the internet "
+                       "does.")
+        return []
 
     def _is_down(self, station_id):
         entry = self.lib.health.get(station_id) or {}
@@ -1239,6 +1281,8 @@ class Playback:
         passed = []
         while self._back_stack:
             station = self.lib.station_by_id(self._back_stack.pop())
+            if station and self.offline_out(station):
+                continue                # offline (task 214): not now
             if station and skip_down and self._is_down(station.get("id")):
                 passed.append(storage.station_display_name(station))
                 continue

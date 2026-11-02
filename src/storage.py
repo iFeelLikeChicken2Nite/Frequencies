@@ -897,14 +897,51 @@ def mark_ok(health, station_id):
     return entry
 
 
+# Failures marked in the last minute, so the ones that were really the
+# internet going away can be taken back once that is known (task 214).
+_recent_failures = []           # (time, health dict, station id, entry before)
+
+
 def mark_failed(health, station_id, reason="", down_after=1):
+    """A failed play or check. Never while offline (build 151, task 214):
+    a station isn't down because the internet is."""
+    try:
+        import offline
+        if offline.is_offline():
+            return health_for(health, station_id)
+    except Exception:                           # noqa: BLE001
+        pass
     entry = health_for(health, station_id)
+    now = time.time()
+    _recent_failures[:] = [f for f in _recent_failures if now - f[0] < 90]
+    _recent_failures.append((now, health, station_id, dict(entry)))
     entry["last_check"] = time.time()
     entry["fail_count"] = int(entry.get("fail_count", 0)) + 1
     entry["last_error"] = reason or "unreachable"
     if entry["fail_count"] >= down_after:
         entry["down"] = True
     return entry
+
+
+def forget_recent_failures(seconds=60):
+    """The internet just turned out to be gone: put back what the last
+    `seconds` of failures changed (task 214). Returns how many stations
+    it touched; the caller saves the health file."""
+    now = time.time()
+    touched = set()
+    for when, health, station_id, before in reversed(_recent_failures):
+        if now - when <= seconds:
+            health[station_id] = dict(before)
+            touched.add(station_id)
+    _recent_failures.clear()
+    return len(touched)
+
+
+def needs_internet(station):
+    """Everything but a local files station needs the internet: streams,
+    Twitch, YouTube, iBroadcast (build 151, task 214)."""
+    station = (station or {}).get("_source") or station or {}
+    return not (station.get("kind") == "local" or station.get("local_path"))
 
 
 def humanize_age(seconds):

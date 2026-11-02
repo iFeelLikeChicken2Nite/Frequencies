@@ -482,9 +482,9 @@ class ClassicSession(QObject):
               e.get("at", 0))
              for e in entries[:200]])
 
-    def set_lyrics(self, lines, message=None):
+    def set_lyrics(self, lines, message=None, search=""):
         if self.lyrics is not None:
-            self.lyrics.set_lyrics(lines, message)
+            self.lyrics.set_lyrics(lines, message, search)
 
     def set_position(self, ms):
         if self.lyrics is not None:
@@ -731,6 +731,9 @@ class ClassicSession(QObject):
             playing = self.playback.current.get("id")
             current = next((i for i, r in enumerate(rows)
                             if r["id"] == playing), -1)
+        # Grayed out while offline (task 214).
+        self.playlist.dimmed = {i for i, r in enumerate(rows)
+                                if r.get("_offline")}
         self.playlist.set_stations([r["name"] for r in rows], current)
 
     def _wire_player(self, w):
@@ -1227,6 +1230,8 @@ class ClassicSession(QObject):
         playing = (self.playback.current or {}).get("id")
         index = next((i for i, r in enumerate(rows) if r["id"] == playing), -1)
         if index != getattr(self.playlist, "current", -1):
+            self.playlist.dimmed = {i for i, r in enumerate(rows)
+                                    if r.get("_offline")}
             self.playlist.set_stations([r["name"] for r in rows], index)
 
     def refresh_dial(self):

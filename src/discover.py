@@ -25,11 +25,13 @@ via storage's own normalisation.
 
 from PyQt5.QtCore import QEvent, QSize, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont, QFontMetrics
-from PyQt5.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLabel,
+from PyQt5.QtWidgets import (QCheckBox, QComboBox, QDialog, QHBoxLayout,
+                             QLabel,
                              QSizePolicy,
                              QListView, QMenu, QPushButton, QToolButton,
                              QVBoxLayout, QWidget)
 
+import featuredhistory
 import radiobrowser
 import storage
 from dialogs import (PAGE_SIZE, _FeaturedWorker, _FilterListWorker,
@@ -483,8 +485,27 @@ class DiscoverPage(QWidget):
         self.featured_note = QLabel("")
         self.featured_note.setProperty("role", "secondary")
 
+        # Every frequency featured before (build 151, task 211): a link
+        # beside the heading, the pair centered together.
+        self.previous_link = QPushButton("Previously featured frequencies…")
+        self.previous_link.setProperty("link", True)
+        self.previous_link.setProperty("accent", True)
+        self.previous_link.setCursor(Qt.PointingHandCursor)
+        self.previous_link.setFocusPolicy(Qt.TabFocus)
+        self.previous_link.clicked.connect(self.show_previously_featured)
+        # The heading's text sits 4 px below its middle (14 px padding over
+        # it, 6 under); 8 px over the link puts both on one line.
+        self.previous_link.setStyleSheet("padding-top: 8px;")
+        head = QHBoxLayout()
+        head.setContentsMargins(0, 0, 0, 0)
+        head.setSpacing(2)
+        head.addStretch(1)
+        head.addWidget(self.featured_head, 0, Qt.AlignVCenter)
+        head.addWidget(self.previous_link, 0, Qt.AlignVCenter)
+        head.addStretch(1)
+
         # All three into the chooser, at the bottom, under the buttons.
-        self._chooser_lay.addWidget(self.featured_head)
+        self._chooser_lay.addLayout(head)
         # Centred by the layout, not by margins inside the view.
         #
         # setViewportMargins was the wrong tool: an item view lays its
@@ -555,7 +576,7 @@ class DiscoverPage(QWidget):
         # Featured belongs to the chooser, so it is shown when the
         # chooser is — the opposite of the results, filters and status.
         for widget in (self.featured_head, self.featured_list,
-                       self.featured_note):
+                       self.featured_note, self.previous_link):
             widget.setVisible(not on)
         self.status.setVisible(on)
         self.chooser.setVisible(not on)
@@ -645,7 +666,7 @@ class DiscoverPage(QWidget):
             self._as_station(row)))
         open_menu(menu, pos)
 
-    def _featured_card(self, station, point):
+    def _featured_card(self, station, point, view=None):
         """A card about the station, closed by clicking anywhere else."""
         from stationcard import StationCard
         # Windows stack rather than replace: two stations side by side is
@@ -674,7 +695,8 @@ class DiscoverPage(QWidget):
             lambda *_a, c=card: c in self._cards and self._cards.remove(c))
         self._cards.append(card)
         self._card = card
-        self._card.show_beside(self.featured_list.viewport(), point)
+        self._card.show_beside((view or self.featured_list).viewport(),
+                               point)
 
     def reaccent(self):
         """Repaint the source glyphs after an accent change.
@@ -879,6 +901,27 @@ class DiscoverPage(QWidget):
         self._featured_width = None
         QTimer.singleShot(0, self._centre_featured)
 
+    # -- previously featured (build 151, task 211) ---------------------------
+
+    def show_previously_featured(self):
+        """The window of every frequency featured before. One at a time:
+        a second click brings the open one back."""
+        window = getattr(self, "_previous_window", None)
+        try:
+            if window is not None and window.isVisible():
+                window.raise_()
+                window.activateWindow()
+                return
+        except RuntimeError:                    # deleted with its close
+            pass
+        self._previous_window = PreviouslyFeaturedWindow(self)
+        self._previous_window.show()
+
+    def featured_now(self):
+        """Today's featured entries' raw settings, to leave out of the
+        previously featured list."""
+        return [e.get("settings") or e for e in self._featured]
+
     # -- adding ------------------------------------------------------------
 
     def set_owned(self, urls):
@@ -957,6 +1000,91 @@ class DiscoverPage(QWidget):
         # this was actually added or refused as a duplicate, and setting the
         # text here too would overwrite that.
         self.station_added.emit(station)
+
+
+class PreviouslyFeaturedWindow(QDialog):
+    """Every frequency that was featured before, newest first (build 151,
+    task 211). The same tiles as the featured strip: a click shows the
+    curator's card, a double-click plays it, right-click (or the card's
+    plus) adds it. Shows what is on disk at once, then reads any older
+    lists from GitHub (featuredhistory.refresh) and fills in."""
+
+    def __init__(self, page):
+        super().__init__(page.window())
+        self.setWindowTitle("Previously featured frequencies")
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
+        self._page = page
+        self.resize(780, 560)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(16, 14, 16, 14)
+        lay.setSpacing(8)
+        intro = QLabel("Every frequency featured before, newest first, "
+                       "with the days it was featured. Click one for its "
+                       "card, double-click to play it.")
+        intro.setProperty("role", "secondary")
+        intro.setWordWrap(True)
+        lay.addWidget(intro)
+        self.list = StationList(tile=FEATURED_TILE)
+        self.list.set_view_mode(True)
+        self.list.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.list.activated_station.connect(page._preview)
+        self.list.clicked_station.connect(
+            lambda row, point: page._featured_card(row, point, self.list))
+        self.list.context_requested.connect(page._featured_menu)
+        lay.addWidget(self.list, 1)
+        self.note = QLabel("")
+        self.note.setProperty("role", "secondary")
+        self.note.setWordWrap(True)
+        lay.addWidget(self.note)
+        try:
+            import smoothscroll
+            self._scroll = smoothscroll.attach(self.list)
+        except Exception:                       # noqa: BLE001
+            pass
+        self._fill()
+        self.note.setText("Looking for older lists…" if not self._rows
+                          else "")
+        import workers
+        self._job = workers.Lookup(
+            lambda: featuredhistory.refresh(page._featured_cache()))
+        self._job.done.connect(self._refreshed)
+        self._job.start()
+
+    def _fill(self):
+        page = self._page
+        found = featuredhistory.previous(page._featured_cache(),
+                                         page.featured_now())
+        self._rows = []
+        for i, (item, first, last) in enumerate(found):
+            entry = radiobrowser._featured_entry(item)
+            self._rows.append({
+                "id": f"prev{i}",
+                "name": entry.get("name", ""),
+                "location": featuredhistory.when_text(first, last),
+                "logo": _featured_art(entry) or entry.get("favicon", ""),
+                "tags": [],
+                "url": entry.get("url", ""),
+                "_featured": entry,
+                "_owned": page.is_owned({"url": entry.get("url", "")})})
+        self.list.set_stations(self._rows)
+
+    def _refreshed(self, why, error):
+        try:
+            self.isVisible()
+        except RuntimeError:                    # closed meanwhile
+            return
+        why = why or (str(error) if error else "")
+        self._fill()
+        if self._rows:
+            self.note.setText(
+                "" if not why else
+                "Showing the ones this computer knows about (" + why + ").")
+        elif why:
+            self.note.setText("Nothing to show yet: older lists couldn't be "
+                              "read (" + why + "). Try again later.")
+        else:
+            self.note.setText("Nothing has been featured before today's "
+                              "picks.")
 
 
 class SearchPage(QWidget):

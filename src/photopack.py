@@ -26,10 +26,12 @@ a minute after start and daily, no opt-in (BioUpdate). The dev build's
 there. A thumbs down (always on since build 95) in the artist panel files an
 issue on the developer's reports repository (task 132; no Discord): the
 artist's name, where the bio came from and its first 200 characters.
-Nothing about the user. Since build 97 (task 133) the app files it itself
-with a token limited to Issues on that one repository (report_token.json,
-shipped by tools/ship_report_token.py); no token or a failed send falls
-back to build 93's pre-filled issue in the browser. One per artist a day.
+Nothing about the user. Since build 151 (tasks 209/212) no build carries a
+token: the app posts the report to the developer's Cloudflare Worker
+(cloudflare/report-worker.js, the "report_service" address), which holds
+the Issues-only token as a secret and files the issue. No address or a
+failed send falls back to build 93's pre-filled issue in the browser. One
+per artist a day.
 
 Addresses: a dev build's own `~/.config/frequencies/photo_pack.json`
 (Settings fields) first, else the shipped `src/photo_pack.json`, which
@@ -56,7 +58,6 @@ PACK_DIR = "photo_pack"
 LOGO_DIR = "logo_pack"              # the band logos (build 141, task 203)
 PACK_INDEX = "pack.json"            # inside the zip and the unpacked folder
 INSTALLED = "installed.json"        # what was unpacked, and from which zip
-REPORT_TOKEN_FILE = "report_token.json"   # dev: Settings; shipped: src/
 SETTING = "photo_pack"              # the opt-in (settings.json)
 LOGO_SETTING = "band_logos"         # on unless switched off (build 141)
 AGENT = "Frequencies (radio app)"
@@ -114,11 +115,13 @@ def pack_address():
     return _address("pack")
 
 
-def save_addresses(pack=None, reports=None, art=None):
+def save_addresses(pack=None, reports=None, art=None, report_service=None):
     """From Settings (dev builds). None leaves a field as it is. art: the
-    picture service for QR codes (build 128, artlink.py)."""
+    picture service for QR codes (build 128, artlink.py); report_service:
+    the thumbs-down Worker (build 151, cloudflare/report-worker.js)."""
     data = _read(dev_address_path())
-    for name, value in (("pack", pack), ("reports", reports), ("art", art)):
+    for name, value in (("pack", pack), ("reports", reports), ("art", art),
+                        ("report_service", report_service)):
         if value is None:
             continue
         value = value.strip()
@@ -926,6 +929,8 @@ class Keeper(QObject):
     def check_bios(self):
         if not pack_address():
             return
+        if self._offline_later(self.check_bios):
+            return
         if self._bio_job is not None and self._bio_job.isRunning():
             return
         self._bio_timer.stop()
@@ -972,6 +977,8 @@ class Keeper(QObject):
             self._say_logos(self._logo_resting())
             return
         if self._logo_job is not None and self._logo_job.isRunning():
+            return
+        if self._offline_later(self.check_logos):
             return
         self._logo_timer.stop()
         job = PackUpdate(logo_address(), folder=logo_dir(), what="logos")
@@ -1066,7 +1073,18 @@ class Keeper(QObject):
             self.changed.emit()
         self._say("Off. The pack was deleted.")
 
+    def _offline_later(self, again):
+        """Offline (task 214): nothing is fetched; `again` runs once the
+        internet may be back. True when it waited."""
+        import offline
+        if not offline.is_offline():
+            return False
+        QTimer.singleShot(60 * 1000, again)
+        return True
+
     def check_now(self):
+        if self._offline_later(self.check_now):
+            return
         self.check_bios()
         self.check_logos()
         if not self.enabled():
@@ -1137,47 +1155,6 @@ def report_address():
 
 def _config_file(name):
     return os.path.join(_config_dir(), name)
-
-
-def report_token():
-    """The token that files thumbs-down issues (build 97, task 133): a
-    fine-grained GitHub token limited to Issues on the reports repository,
-    nothing else. A dev build's own (Settings) first, else the one the
-    build shipped (src/report_token.json, written by
-    tools/ship_report_token.py). Never logged, never in the project."""
-    paths = [shipped_report_token_path()]
-    import devmode
-    if devmode.is_dev():
-        paths.insert(0, _config_file(REPORT_TOKEN_FILE))
-    for path in paths:
-        found = str(_read(path).get("token") or "").strip()
-        if found:
-            return found
-    return ""
-
-
-def shipped_report_token_path():
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        REPORT_TOKEN_FILE)
-
-
-def dev_report_token():
-    return str(_read(_config_file(REPORT_TOKEN_FILE)).get("token") or "")
-
-
-def save_report_token(value):
-    """From Settings (dev builds). Readable only by you."""
-    value = (value or "").strip()
-    path = _config_file(REPORT_TOKEN_FILE)
-    if not value:
-        if os.path.exists(path):
-            os.remove(path)
-        return
-    fd = os.open(path + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        json.dump({"token": value}, handle)
-    os.replace(path + ".tmp", path)
-    os.chmod(path, 0o600)
 
 
 WRONG_THINGS = {"bio": "Bio", "photo": "Photo", "both": "Bio and photo"}
@@ -1274,52 +1251,96 @@ def _issue_address(repo, title, body):
     return f"{repo}/issues/new?{query}"
 
 
-def _due(settings, artist):
-    """One report per artist per day (task 133). Marks it as sent."""
+def _sent_today(settings):
     today = time.strftime("%Y-%m-%d")
-    sent = settings.get("report_sent") or {}
-    sent = {k: v for k, v in sent.items() if v == today}   # only today's
-    key = artist.lower()
+    sent = {k: v for k, v in (settings.get("report_sent") or {}).items()
+            if v == today}                              # only today's
     settings["report_sent"] = sent
-    if key in sent:
-        return False
-    sent[key] = today
-    return True
+    return sent, today
 
 
-class ReportSend(Job):
-    """File one issue on the reports repository with the shipped token.
-    Answers done(ok, text): the issue's address, or why it failed."""
+def _due(settings, artist):
+    """One report per artist per day (task 133): True if none went out
+    today. Since build 152 this only asks; `_mark_sent` writes it down once
+    the report really went."""
+    return artist.lower() not in _sent_today(settings)[0]
+
+
+def _mark_sent(settings, artist):
+    sent, today = _sent_today(settings)
+    sent[artist.lower()] = today
+
+
+def report_service_address():
+    """The developer's report Worker (https://<name>.workers.dev), or ""
+    (build 151, tasks 209/212). A dev build's own first, then the shipped
+    one (tools/make_photo_pack.py)."""
+    address = _address("report_service").strip().rstrip("/")
+    return address if address.startswith(("https://", "http://")) else ""
+
+
+def _app_build():
+    try:
+        import version
+        return str(version.BUILD)
+    except Exception:                           # noqa: BLE001
+        return ""
+
+
+def _app_os():
+    import sys
+    if sys.platform.startswith("linux"):
+        return "linux"
+    if sys.platform == "win32":
+        return "windows"
+    return "other"
+
+
+def report_fields(artist, source, bio, what="both", photo="", station=""):
+    """What the app posts to the report Worker. The Android port posts the
+    same fields (cloudflare/README.md)."""
+    return {"artist": artist, "what": what if what in WRONG_THINGS
+            or what == "test" else "both",
+            "source": source or "", "bio": (bio or "")[:200],
+            "photo": photo or "", "station": station or "",
+            "build": _app_build(), "os": _app_os()}
+
+
+class ReportPost(Job):
+    """Post one report to the report Worker, which files the issue.
+    Answers done(ok, text): the issue's address (or "already reported
+    today"), or why it failed. No token: the Worker holds it."""
 
     done = pyqtSignal(bool, str)
 
-    def __init__(self, repo, title, body, token, parent=None):
+    def __init__(self, address, fields, parent=None):
         super().__init__(parent)
-        self.repo = repo
-        self.title = title
-        self.body = body
-        self._token = token
+        self.address = address
+        self.fields = fields
+        self.permanent = False      # the Worker said no; retrying won't help
 
     def work(self):
         try:
-            ok, text = True, self._file()
+            ok, text = True, self._post()
         except Exception as exc:                # noqa: BLE001
             ok, text = False, self._why(exc)
         self.send(self.done, ok, text)
 
-    def _file(self):
+    def _post(self):
         import requests
-        owner, name = self.repo.rsplit("/", 2)[-2:]
-        answer = requests.post(
-            f"https://api.github.com/repos/{owner}/{name}/issues",
-            json={"title": self.title, "body": self.body},
-            headers={"Authorization": "Bearer " + self._token,
-                     "Accept": "application/vnd.github+json",
-                     "X-GitHub-Api-Version": "2022-11-28",
-                     "User-Agent": AGENT},
-            timeout=15)
+        answer = requests.post(self.address + "/report", json=self.fields,
+                               headers={"User-Agent": AGENT}, timeout=15)
+        if 400 <= answer.status_code < 500 \
+                and answer.status_code not in (408, 429):
+            self.permanent = True
         answer.raise_for_status()
-        return str(answer.json().get("html_url") or "")
+        data = answer.json()
+        if not data.get("ok"):
+            self.permanent = True
+            raise ValueError(str(data.get("error") or "no answer"))
+        if data.get("already"):
+            return "already reported today"
+        return str(data.get("url") or "filed")
 
     @staticmethod
     def _why(exc):
@@ -1328,68 +1349,171 @@ class ReportSend(Job):
             if isinstance(exc, requests.HTTPError) \
                     and exc.response is not None:
                 code = exc.response.status_code
-                if code in (401, 403):
-                    return ("GitHub refused the token (it needs Issues: "
-                            "Read and write on the reports repository)")
-                if code in (404, 410):
-                    return ("GitHub can't find the reports repository (or "
-                            "the token isn't for it)")
-                return f"GitHub answered {code}"
+                try:
+                    said = str(exc.response.json().get("error") or "")
+                except ValueError:
+                    said = ""
+                return f"the report service answered {code}" + (
+                    f" ({said})" if said else "")
             if isinstance(exc, (requests.ConnectionError, requests.Timeout)):
-                return "couldn't reach GitHub (offline?)"
+                return "couldn't reach the report service (offline?)"
         except ImportError:
             pass
         return str(exc) or exc.__class__.__name__
 
 
-def report(settings, artist, source, bio, open_url, what="both", photo=""):
-    """A thumbs down (always on since build 95). Since build 97 the app
-    files the issue itself with the shipped token, no browser and no
-    Submit; if it can't (no token, offline, refused), it falls back to
-    build 93's pre-filled issue, which `open_url(address)` opens for the
-    user to submit. One report per artist per day. Needs the GUI thread
-    (the answer comes back there)."""
-    repo = report_address()
-    if not repo:
-        _log(f"thumbs down for '{artist}' not reported: this build has no "
-             f"report address")
-        return
-    if not _due(settings, artist):
-        _log(f"thumbs down for '{artist}' already reported today")
-        return
-    title, body = _issue_text(artist, source, bio, what, photo)
-    token = report_token()
-    if not token:
-        _log(f"thumbs down for '{artist}': no report token, opening the "
-             f"browser")
-        open_url(_issue_address(repo, title, body))
-        return
-    job = ReportSend(repo, title, body, token)
+QUEUE_FILE = "report-queue.json"
+QUEUE_KEEP_DAYS = 7
+QUEUE_RETRY_S = (30, 120, 600, 1800)
 
-    def done(ok, text):
+
+def queue_path():
+    return os.path.join(_config_dir(), QUEUE_FILE)
+
+
+class ReportQueue(QObject):
+    """Thumbs-down reports waiting to go out (build 152, task 215).
+
+    A report is written to disk the moment it is answered, from a snapshot
+    taken at the press, so a station change, a slow network or quitting
+    can't lose it. It leaves the queue only when the Worker took it (or
+    refused it for good, which opens the browser form instead); the artist
+    is marked as reported then, not before. Needs the GUI thread."""
+
+    def __init__(self, settings, save_settings, open_url, parent=None):
+        super().__init__(parent)
+        self.settings = settings
+        self.save_settings = save_settings
+        self.open_url = open_url
+        self._job = None
+        self._fails = 0
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self.kick)
+
+    # -- the file
+    def items(self):
+        try:
+            with open(queue_path(), encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, ValueError):
+            return []
+        return [i for i in data if isinstance(i, dict)] \
+            if isinstance(data, list) else []
+
+    def _write(self, items):
+        path = queue_path()
+        try:
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as handle:
+                json.dump(items, handle)
+            os.replace(tmp, path)
+        except OSError as exc:
+            _log(f"report queue not saved: {exc}")
+
+    def waiting(self, artist):
+        return any(i.get("artist", "").lower() == artist.lower()
+                   for i in self.items())
+
+    # -- adding
+    def add(self, artist, source, bio, what, photo, station):
+        """Queue a report from what was on screen at the press."""
+        service = report_service_address()
+        repo = report_address()
+        if not repo and not service:
+            _log(f"thumbs down for '{artist}' not reported: this build has "
+                 f"no report address")
+            return
+        if not _due(self.settings, artist) or self.waiting(artist):
+            _log(f"thumbs down for '{artist}' already reported today")
+            return
+        title, body = _issue_text(artist, source, bio, what, photo)
+        if not service:
+            self._browser(artist, repo, title, body, "no report service "
+                          "address")
+            return
+        items = self.items()
+        items.append({"artist": artist, "title": title, "body": body,
+                      "fields": report_fields(artist, source, bio, what,
+                                              photo, station),
+                      "queued": int(time.time())})
+        self._write(items)
+        _log(f"thumbs down for '{artist}' queued")
+        self.kick()
+
+    def _browser(self, artist, repo, title, body, why):
+        _mark_sent(self.settings, artist)
+        self.save_settings()
+        if not repo:
+            _log(f"thumbs down for '{artist}' not filed ({why}) and this "
+                 f"build has no repository to open in the browser")
+            return
+        _log(f"thumbs down for '{artist}': {why}, opening the browser")
+        self.open_url(_issue_address(repo, title, body))
+
+    # -- sending
+    def kick(self):
+        """Send the first waiting report, unless one is on its way or the
+        computer is offline (it is tried again when it comes back)."""
+        if self._job is not None:
+            return
+        cutoff = time.time() - QUEUE_KEEP_DAYS * 86400
+        items = [i for i in self.items() if i.get("queued", 0) >= cutoff]
+        if not items:
+            self._write([])
+            return
+        service = report_service_address()
+        if not service:
+            return                      # this build can't send; keep them
+        try:
+            import offline
+            if offline.is_offline():
+                return
+        except Exception:               # noqa: BLE001
+            pass
+        item = items[0]
+        job = ReportPost(service, item.get("fields") or {})
+        job.done.connect(lambda ok, text, i=item, j=job:
+                         self._answered(i, j, ok, text))
+        self._job = job
+        job.start()
+
+    def _answered(self, item, job, ok, text):
+        self._job = None
+        artist = item.get("artist", "")
+        rest = [i for i in self.items() if i != item]
         if ok:
             _log(f"thumbs down for '{artist}' filed: {text}")
+            self._fails = 0
+            self._write(rest)
+            _mark_sent(self.settings, artist)
+            self.save_settings()
+        elif job.permanent:
+            self._fails = 0
+            self._write(rest)
+            self._browser(artist, report_address(), item.get("title", ""),
+                          item.get("body", ""), f"not filed ({text})")
+        else:
+            _log(f"thumbs down for '{artist}' not sent yet ({text}); "
+                 f"will try again")
+            delay = QUEUE_RETRY_S[min(self._fails, len(QUEUE_RETRY_S) - 1)]
+            self._fails += 1
+            self._timer.start(delay * 1000)
             return
-        _log(f"thumbs down for '{artist}' not filed ({text}), opening the "
-             f"browser")
-        open_url(_issue_address(repo, title, body))
-    job.done.connect(done)
-    job.start()
+        if rest:
+            self._timer.start(500)
 
 
 def test_report(done):
-    """Dev build: file a test issue now. done(ok, text) on the GUI thread."""
-    repo = report_address()
-    token = report_token()
-    if not repo:
+    """Dev build: file a test issue through the Worker now. done(ok, text)
+    on the GUI thread."""
+    service = report_service_address()
+    if not service:
         done(False, "set the Report address first")
         return None
-    if not token:
-        done(False, "paste the Report token first")
-        return None
-    job = ReportSend(repo, "Test report from Frequencies",
-                     "Sent by the dev build's \"Send a test report\" "
-                     "button. You can close this issue.", token)
+    job = ReportPost(service, report_fields("Frequencies test", "", "",
+                                            "test"))
     job.done.connect(done)
     job.start()
     return job
+

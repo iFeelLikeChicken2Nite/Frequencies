@@ -208,6 +208,15 @@ def _usable_logo(data):
     return image.width() >= MIN_LOGO_PX and image.height() >= MIN_LOGO_PX
 
 
+
+def _offline():
+    """No lookups while the internet is gone (build 151, task 214)."""
+    try:
+        import offline
+        return offline.is_offline()
+    except Exception:                           # noqa: BLE001
+        return False
+
 class ArtistPhotoWorker(Job):
     """Find a picture of an artist.
 
@@ -501,6 +510,8 @@ class Feeds(QObject):
         station = self.lib.station_by_id(self._station_id)
         if station is None:
             return
+        if _offline():
+            return                      # nothing to ask (task 214)
         if self._shazam_worker is not None and self._shazam_worker.isRunning():
             waited = time.monotonic() - self._shazam_started
             if waited < self.SHAZAM_STUCK_SECONDS:
@@ -635,6 +646,11 @@ class Feeds(QObject):
         if not title:
             return
         key = f"{artist}|{title}".lower()
+        if _offline() and key != self._track_key:
+            # No lookup while offline (task 214); no web search either.
+            self.win.on_lyrics([], "You're offline, so lyrics can't be "
+                                   "looked up right now.")
+            return
         if key == self._track_key:
             # Same song, identified again — re-anchor instead of returning.
             #
@@ -649,6 +665,8 @@ class Feeds(QObject):
 
         self.win.on_lyrics([], "")
         self.win.on_busy(lyrics=True)
+        # For "Search the web for these lyrics" when none come back.
+        self._lyrics_search = lyrics_module.search_url(artist, title)
         worker = workers.LyricsWorker(station["id"], key, artist, title,
                                       parent=self)
         worker.loaded.connect(self._on_lyrics_loaded)
@@ -685,16 +703,25 @@ class Feeds(QObject):
         else:
             plain = (result.get("plain") or "").splitlines()
             self.win.on_lyrics(plain or [],
-                               None if plain else "No lyrics found.")
+                               None if plain else "No lyrics found.",
+                               search="" if plain else self._search_for())
 
     def _on_lyrics_none(self, station_id, track_key):
         if self._still_wanted(station_id, track_key):
-            self.win.on_lyrics([], "No lyrics found for this track.")
+            self.win.on_lyrics([], "No lyrics found for this track.",
+                               search=self._search_for())
             self.win.on_sources(lyrics="")
 
     def _on_lyrics_failed(self, station_id, track_key, message):
         if self._still_wanted(station_id, track_key):
-            self.win.on_lyrics([], message or "Lyrics lookup failed.")
+            self.win.on_lyrics([], message or "Lyrics lookup failed.",
+                               search=self._search_for())
+
+    def _search_for(self):
+        """The web search for the song whose lyrics weren't found (task
+        213), or "" when no song is known."""
+        return getattr(self, "_lyrics_search", "") if self._track_key \
+            else ""
 
     # A line should be on screen slightly before it is sung, not after —
     # but Shazam's offset lands early enough that lines were changing a
@@ -911,6 +938,8 @@ class Feeds(QObject):
         """
         if not self.lib.settings.get("artist_lookup", True):
             return
+        if _offline():
+            return                      # quietly, while offline (task 214)
         if self._station_bio:
             # The station's own article holds the panel (task 49).
             artist = (track.get("artist") or "").strip()

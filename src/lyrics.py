@@ -20,6 +20,21 @@ USER_AGENT = "Frequencies/1.5 (https://github.com/)"
 TIMEOUT = 10
 
 
+# Where "Search the web for these lyrics" goes (build 151, task 213). The
+# browser's own search engine can't be asked for, so a neutral one.
+WEB_SEARCH = "https://duckduckgo.com/?q="
+
+
+def search_url(artist, title):
+    """A web search for the song's lyrics, or "" with no song."""
+    title = (title or "").strip()
+    if not title:
+        return ""
+    from urllib.parse import quote_plus
+    words = " ".join(w for w in ((artist or "").strip(), title, "lyrics") if w)
+    return WEB_SEARCH + quote_plus(words)
+
+
 class LyricsError(Exception):
     """A lookup that failed, as opposed to a song with no lyrics.
 
