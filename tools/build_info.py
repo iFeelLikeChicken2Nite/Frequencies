@@ -5,7 +5,7 @@ Run by build-appimage-fedora.sh and build-windows.ps1 last:
 
     python3 tools/build_info.py <the AppImage or Setup.exe> [--dev]
 
-writes <file>.json: the build number (src/version.py), Linux or Windows,
+writes <file>.json: the build number (src/version.py), platform and architecture,
 dev or user build, its size and sha256, and whether your dev picks were
 shipped into it (talk stations, Twitch Client ID, disabled presets; no
 report token since build 151). The dev build's "Publish this build as an
@@ -24,7 +24,7 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(HERE, "src")
+SRC = os.environ.get("FREQUENCIES_SOURCE_DIR") or os.path.join(HERE, "src")
 
 
 def read(name):
@@ -62,14 +62,27 @@ def main(argv):
         for piece in iter(lambda: f.read(1024 * 1024), b""):
             digest.update(piece)
     picks = shipped()
+    macos = re.fullmatch(r"frequencies-macos-(arm64|x86_64)(-dev)?\.dmg",
+                         os.path.basename(path), re.IGNORECASE)
+    if path.lower().endswith(".dmg") and not macos:
+        print("macOS DMG must be named Frequencies-macOS-arm64.dmg or "
+              "Frequencies-macOS-x86_64.dmg")
+        return 2
+    arch = macos.group(1).lower() if macos else ""
+    if macos and macos.group(2) and "--dev" not in argv:
+        print("a -dev DMG must be marked with --dev")
+        return 2
     info = {"build": build,
-            "os": "windows" if path.lower().endswith(".exe") else "linux",
+            "os": ("macos_" + arch if arch else
+                   "windows" if path.lower().endswith(".exe") else "linux"),
             "dev": "--dev" in argv,
             "file": os.path.basename(path),
             "size": os.path.getsize(path),
             "sha256": digest.hexdigest(),
             "made": time.strftime("%Y-%m-%d %H:%M"),
             "shipped": picks}
+    if arch:
+        info["arch"] = arch
     with open(path + ".json", "w", encoding="utf-8") as f:
         json.dump(info, f, indent=2)
     print(f"    build {build} ({'dev' if info['dev'] else 'user'} build)")

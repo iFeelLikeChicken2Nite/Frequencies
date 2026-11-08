@@ -18,6 +18,7 @@ Sound leveling:
   optional per-station "vocal clarity" chain for talk radio.
 """
 import ctypes.util
+import glob
 import locale
 import random
 import os
@@ -34,6 +35,9 @@ import time
 # AppImage (normal dev run), this is a no-op and the system libmpv is
 # found the usual way.
 _bundled_libmpv = os.environ.get("STREAMDECK_LIBMPV_PATH")
+if not _bundled_libmpv and sys.platform == "darwin" and getattr(sys, "frozen", False):
+    _candidates = sorted(glob.glob(os.path.join(sys._MEIPASS, "libmpv*.dylib")))
+    _bundled_libmpv = _candidates[0] if _candidates else None
 if _bundled_libmpv and os.path.exists(_bundled_libmpv):
     _orig_find_library = ctypes.util.find_library
 

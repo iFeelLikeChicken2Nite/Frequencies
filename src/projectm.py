@@ -139,7 +139,7 @@ def availability():
     labeled.
     """
     library = find_library()
-    if library is None and sys.platform == "win32":
+    if library is None and sys.platform in ("win32", "darwin"):
         return False, ("projectM is missing from this build, so the "
                        "visualizer can't draw.")
     if library is None:

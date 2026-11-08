@@ -74,6 +74,8 @@ def system_says_online():
                 ctypes.byref(flags), 0))
         except Exception:                       # noqa: BLE001
             return None
+    if not sys.platform.startswith("linux"):
+        return None
     try:
         from PyQt5.QtDBus import QDBusConnection, QDBusInterface
         bus = QDBusConnection.systemBus()

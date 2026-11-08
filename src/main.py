@@ -153,6 +153,11 @@ def missing_library_window(error):
                  "(libmpv-2.dll) didn't load.", "",
                  "Put libmpv-2.dll back in the Frequencies folder, next "
                  "to Frequencies.exe, then open Frequencies again."]
+    elif sys.platform == "darwin":
+        lines = ["Frequencies can't start because its bundled sound engine "
+                 "(libmpv) didn't load.", "",
+                 "Restore the app from its disk image or rebuild it, "
+                 "then open Frequencies again."]
     elif hint:
         apt, dnf, pacman, zypper = hint
         lines += ["", "Install it, then open Frequencies again:",

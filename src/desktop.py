@@ -97,9 +97,11 @@ class Desktop(QObject):
             # Windows' media controls in place of MPRIS (WP3).
             import smtc
             bridge = smtc.SmtcBridge(self)
-        else:
+        elif sys.platform.startswith("linux"):
             import mpris
             bridge = mpris.MprisBridge(self)
+        else:
+            return
         if not bridge.register():
             return                      # no session bus; media keys just won't
         self.mpris = bridge

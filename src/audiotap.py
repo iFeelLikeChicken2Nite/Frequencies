@@ -176,8 +176,8 @@ class _WasapiCapture:
 
 def capture_command(source=None):
     """The command to run, or None if neither tool is installed."""
-    if sys.platform == "win32":
-        return None                     # Windows records in-process
+    if not sys.platform.startswith("linux"):
+        return None
     if shutil.which("parec"):
         # Preferred when a source is named: parec takes device names,
         # which are stable and readable, where pw-record wants numeric
@@ -210,6 +210,8 @@ def list_sources():
             return []
         return [(name.replace(" [Loopback]", " (output)"), name)
                 for name in names]
+    if not sys.platform.startswith("linux"):
+        return []
     if not shutil.which("pactl"):
         return []
     try:
@@ -242,6 +244,8 @@ def availability():
                            "Windows audio capture part is missing from "
                            "this build.")
         return True, "Listening to the audio output."
+    if sys.platform == "darwin":
+        return False, "Audio capture for the visualizer is not available on macOS."
     if capture_command() is None:
         return False, (
             "No audio capture tool found, so the visualizer can't hear "
