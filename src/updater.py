@@ -8,6 +8,8 @@ Linux AppImage and/or the Windows installer, and the newest release holds
 
     {"linux":   {"build": 125, "url": …, "size": …, "sha256": …},
      "windows": {"build": 125, "url": …, "size": …, "sha256": …},
+    "macos_arm64":  {"build": 125, "url": …, "size": …, "sha256": …},
+    "macos_x86_64": {"build": 125, "url": …, "size": …, "sha256": …},
      "android": {"build": 125, "url": …, "size": …, "sha256": …}}
 
 An OS is offered an update only when its own entry is newer than this
@@ -38,6 +40,7 @@ gone), never when it only hides in the tray:
            (session_ending): then at the next normal quit. If the installer
            didn't finish (Windows killed it), the next launch runs it again
            before the window opens (/RELAUNCH starts the app after it).
+    macOS    the correct architecture's download is offered for manual install.
 
 The next launch of the new build says "Updated to build N" once, with
 the what's-new lines (whats_new.json) of the builds in between.
@@ -53,6 +56,7 @@ FREQ_UPDATE_REPO ("owner/name") at another repository for publishing.
 import hashlib
 import json
 import os
+import platform
 import re
 import subprocess
 import sys
@@ -65,10 +69,17 @@ import version
 from jobs import Job
 
 WINDOWS = sys.platform == "win32"
-OS = "windows" if WINDOWS else "linux"
-OS_NAMES = {"linux": "Linux", "windows": "Windows", "android": "Android"}
+MACOS = sys.platform == "darwin"
+ARCH = platform.machine().lower() if MACOS else ""
+ARCH = {"aarch64": "arm64", "amd64": "x86_64"}.get(ARCH, ARCH)
+OS = ("windows" if WINDOWS else "macos_" + ARCH if MACOS else "linux")
+OS_NAMES = {"linux": "Linux", "windows": "Windows", "android": "Android",
+                        "macos_arm64": "macOS (Apple silicon)",
+                        "macos_x86_64": "macOS (Intel)"}
 ASSETS = {"linux": "Frequencies-x86_64.AppImage",
-          "windows": "Frequencies-Setup.exe"}
+                    "windows": "Frequencies-Setup.exe",
+                    "macos_arm64": "Frequencies-macOS-arm64.dmg",
+                    "macos_x86_64": "Frequencies-macOS-x86_64.dmg"}
 MANIFEST = "latest.json"
 REPO_NAME = "frequencies-releases"
 TOKEN_FILE = "release_token.json"
@@ -175,6 +186,8 @@ def installed_copy():
 
 def cant_replace():
     """Why this copy can't be replaced in place, or ""."""
+    if MACOS:
+        return "macOS updates are installed manually"
     if WINDOWS:
         if not installed_copy():
             return ("this copy isn't installed (updates install themselves "
@@ -194,6 +207,8 @@ def cant_replace():
 
 def download_path(build, entry):
     """Where build `build` is downloaded to."""
+    if MACOS:
+        return os.path.join(folder(), ASSETS[OS])
     if not WINDOWS and not cant_replace():
         image = os.environ["APPIMAGE"]
         # Beside the running AppImage, so the swap is one rename on the
@@ -265,6 +280,8 @@ def before_window():
     Windows runs an installer that didn't finish last time (so the app
     never runs from a half-updated copy). True = the installer is
     running and this launch should end."""
+    if MACOS:
+        return False
     info = ours()
     if not info:
         return False
@@ -303,6 +320,8 @@ def before_window():
 
 def apply_on_quit():
     """At the very end of a real quit. Puts a downloaded build in place."""
+    if MACOS:
+        return
     info = ours()
     if not info or _dev() or info.get("os") != OS:
         return
@@ -386,6 +405,8 @@ class Check(Job):
                 entry = dict(entry, _others={
                     k: v.get("build") for k, v in data.items()
                     if isinstance(v, dict)})
+            else:
+                entry = {}
             self.send(self.done, entry or {}, "")
         except Exception as exc:                # noqa: BLE001
             self.send(self.done, {}, _plain(exc))
@@ -469,9 +490,10 @@ class Updater(QObject):
         self.settings = settings
         self.text = ""
         self.manual = ""        # a download the user installs by hand
+        self.manual_url = ""
         self._job = None
         self._quiet = True
-        info = ours()
+        info = {} if MACOS else ours()
         if info.get("os") == OS and int(info.get("build") or 0) \
                 > version.BUILD and not _dev():
             self._waiting(int(info["build"]), info.get("file") or "")
@@ -483,7 +505,7 @@ class Updater(QObject):
     def start(self):
         _log(f"build {version.BUILD} ({OS}, "
              f"{'dev' if _dev() else 'user'} build)")
-        if _dev() or self.manual or ours().get("os") == OS:
+        if _dev() or self.manual or (not MACOS and ours().get("os") == OS):
             return
         # Once every session (the user, 2026-10-19).
         QTimer.singleShot(FIRST_CHECK_MS, lambda: self.check(quiet=True))
@@ -503,6 +525,9 @@ class Updater(QObject):
     # -- checking
 
     def check(self, quiet=False):
+        if MACOS and OS not in ASSETS:
+            self._say("Updates are not available for this Mac architecture.")
+            return
         if self._job is not None and self._job.isRunning():
             return
         import offline
@@ -529,6 +554,7 @@ class Updater(QObject):
 
     def _checked(self, entry, problem):
         self._job = None
+        self.manual_url = ""
         if problem:
             _log(f"check failed: {problem}")
             self._say(self._resting() if self._quiet
@@ -536,12 +562,33 @@ class Updater(QObject):
             return
         self.settings[CHECKED] = time.time()
         self._save()
-        build = int(entry.get("build") or 0)
+        if MACOS and not entry:
+            self._say("No macOS update is available yet.")
+            return
+        try:
+            build = int(entry.get("build") or 0)
+        except (TypeError, ValueError):
+            self._say("Couldn't check: the update has an invalid build number.")
+            return
         if build <= version.BUILD:
             _log(f"up to date (newest {OS} build: {build or 'none'})")
             self._say(f"Up to date (build {version.BUILD}).")
             return
         _log(f"build {build} is out ({OS})")
+        if MACOS:
+            from urllib.parse import urlparse
+            url = entry.get("url") or ""
+            try:
+                parsed = urlparse(url) if isinstance(url, str) else None
+                valid_url = bool(parsed and parsed.scheme == "https" and parsed.hostname)
+            except ValueError:
+                valid_url = False
+            if not valid_url:
+                self._say("The macOS update has no valid HTTPS download address.")
+                return
+            self.manual_url = url
+            self._say(f"Build {build} is available to download and install manually.")
+            return
         if _dev():
             self._say(f"Build {build} is out. This is a dev build, so it "
                       "doesn't install user builds over itself.")
@@ -662,6 +709,8 @@ def build_info(path):
     if info.get("os") != OS:
         return info, (f"that's a {OS_NAMES.get(info.get('os'), '?')} build; "
                       f"publish it from {OS_NAMES.get(info.get('os'), '?')}")
+    if MACOS and info.get("arch") != ARCH:
+        return info, "that build is for a different Mac architecture"
     missing = [name for name in SHIPPED
                if not (info.get("shipped") or {}).get(name)]
     if missing:
@@ -687,7 +736,7 @@ def heads_up(manifest, build):
         if name == OS:
             continue
         entry = manifest.get(name)
-        if not isinstance(entry, dict) and name == "android":
+        if not isinstance(entry, dict) and (name == "android" or name.startswith("macos_")):
             continue
         have = int((entry or {}).get("build") or 0)
         if have < build:
@@ -773,8 +822,8 @@ class PublishUpdate(Job):
                 f"out (bump src/version.py for a new build)")
         release = self._release(base, build)
         asset = ASSETS[OS]
-        self._replace(base, owner, name, release, asset,
-                      open(self.path, "rb").read())
+        with open(self.path, "rb") as handle:
+            self._replace(base, owner, name, release, asset, handle.read())
         manifest[OS] = {
             "build": build,
             "url": (f"https://github.com/{owner}/{name}/releases/download/"

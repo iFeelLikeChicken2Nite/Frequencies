@@ -1,7 +1,10 @@
+.DS_Store
+__pycache__/
 src/report_token.json
 src/talk_photos/
 photo-pack/
 venv/
+build-macos/
 projectm-src/
 projectm-build/
 projectm-presets/

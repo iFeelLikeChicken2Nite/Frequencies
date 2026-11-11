@@ -755,10 +755,13 @@ class OptionsPage(QWidget):
         lay.addWidget(status)
         repo = updater.repository()
         where = f"{repo[0]}/{repo[1]}" if repo else "<you>/frequencies-releases"
+        delivery = ("macOS users can download and install it manually. "
+                    if updater.MACOS else
+                    "every user build installs it the next time it's closed. ")
         note = QLabel(
-            f"Pick the user build you made ({updater.ASSETS[updater.OS]}); "
-            f"it goes on {where} and every user build installs it the next "
-            "time it's closed. Linux and Windows each publish their own "
+            f"Pick the user build you made ({updater.ASSETS.get(updater.OS, 'unsupported architecture')}); "
+            f"it goes on {where} and {delivery}"
+            "Each platform publishes its own "
             "file to the same release. The token: github.com > Settings > "
             "Developer settings > Fine-grained tokens > Generate, only "
             "that repository, Contents: Read and write. It stays on this "
@@ -777,7 +780,7 @@ class OptionsPage(QWidget):
                 os.path.expanduser("~")
             path, _ = QFileDialog.getOpenFileName(
                 self, "Publish which build?", start,
-                f"User build ({updater.ASSETS[updater.OS]});;All files (*)")
+                f"User build ({updater.ASSETS.get(updater.OS, '*')});;All files (*)")
             if not path:
                 return
             self.lib.settings["update_publish_folder"] = os.path.dirname(path)
@@ -788,10 +791,9 @@ class OptionsPage(QWidget):
             asked = QMessageBox.question(
                 self, "Publish this build",
                 f"Publish build {info.get('build')} for "
-                f"{updater.OS_NAMES[updater.OS]} to {where}?\n\nEveryone "
-                "using Frequencies on "
-                f"{updater.OS_NAMES[updater.OS]} gets it the next time "
-                "they open and close the app.")
+                f"{updater.OS_NAMES.get(updater.OS, 'this platform')} to {where}?\n\n"
+                + ("Users can download it manually." if updater.MACOS else
+                   "Users get it the next time they open and close the app."))
             if asked != QMessageBox.Yes:
                 return
             job = updater.PublishUpdate(path)
@@ -846,25 +848,35 @@ class OptionsPage(QWidget):
         import updater
         box, lay = _section(
             "Updates",
-            "Frequencies checks for a new build each time it starts, "
-            "downloads it in the background and puts it in place when you "
-            "close the app. Your settings and frequencies stay as they are.")
+            ("Frequencies checks for updates. Download and install new "
+             "macOS builds manually." if updater.MACOS else
+             "Frequencies checks for a new build each time it starts, "
+             "downloads it in the background and puts it in place when you "
+             "close the app. Your settings and frequencies stay as they are."))
         updates = updater.updater()
         status = QLabel(updates.text if updates else "")
         status.setProperty("role", "secondary")
         status.setWordWrap(True)
         check = QPushButton("Check for updates")
         show = QPushButton("Show the download")
+        open_download = QPushButton("Download update")
         show.setVisible(bool(updates and updates.manual))
-        lay.addWidget(_row(check, show))
+        open_download.setVisible(bool(updates and updates.manual_url))
+        lay.addWidget(_row(check, show, open_download))
         lay.addWidget(status)
         if updates is not None:
             check.clicked.connect(lambda: updates.check(quiet=False))
             updates.status.connect(status.setText)
             updates.status.connect(
                 lambda _t: show.setVisible(bool(updates.manual)))
+            updates.status.connect(
+                lambda _t: open_download.setVisible(bool(updates.manual_url)))
             show.clicked.connect(
                 lambda: self._open_folder_of(updates.manual))
+            from PyQt5.QtCore import QUrl
+            from PyQt5.QtGui import QDesktopServices
+            open_download.clicked.connect(
+                lambda: QDesktopServices.openUrl(QUrl(updates.manual_url)))
         self.lay.addWidget(box)
 
     def _build_diagnostics(self):

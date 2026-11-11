@@ -40,6 +40,13 @@ The LGPL parts (Qt, glibc, projectM and others) can be replaced: run
 `./Frequencies-x86_64.AppImage --appimage-extract`, swap the library inside
 `squashfs-root/usr/lib` (or the PyQt5 folder), and start `squashfs-root/AppRun`.
 
+The experimental macOS build downloads the GPL v3 libmpv 0.41.0 and FFmpeg
+libraries from `binaries-mpv` release 26.10.1:
+https://github.com/vegidio/binaries-mpv/tree/26.10.1. That repository contains
+the build scripts, dependency information, and source references. Before
+distributing a macOS release, audit the bundled dependencies' individual
+licenses and provide their required notices and corresponding source.
+
 ## Parts with their own terms
 
 These are not covered by Frequencies' license, whatever a LICENSE file next to

@@ -6,6 +6,42 @@ ___________________________________
 # Install Appimage version 153 for [Linux 🐧](https://github.com/iFeelLikeChicken2Nite/frequencies-releases/releases/download/build-153/Frequencies-x86_64.AppImage)
 # There is also an experimental [Intel based fork for macOS 🍎 (It works with Rosetta, so it should support Apple Silicon!)](https://github.com/DougM69/Frequencies/tree/macos-support)
 
+## Experimental macOS build
+
+On macOS, run:
+
+```bash
+bash build-macos.sh
+```
+
+On Apple silicon with Rosetta installed, build the Intel development image with:
+
+```bash
+arch -x86_64 /bin/bash build-macos.sh
+```
+
+The script downloads a pinned standalone Python and creates an isolated build
+environment, installs PyQt5,
+PyQtWebEngine, and the other Python build dependencies, and downloads a pinned,
+checksum-verified libmpv archive for the Python interpreter's architecture.
+The resulting `build-macos/dist/Frequencies.app` and architecture-specific
+`-dev.dmg` bundle Qt and libmpv; their users do not need to install either.
+Developer settings are staged without modifying the checkout. Set `PYTHON` to
+select a compatible Python 3.12 or newer executable or
+`MACOS_LIBMPV` to select a different libmpv dylib. Custom libraries must have
+compatible architecture, macOS version, dependencies, and redistribution
+terms. `bash build-macos.sh --setup-only` prepares the Python build environment
+without downloading libmpv or packaging the app.
+
+This is an experimental development build, not a signed or notarized release.
+It has not yet been verified on macOS 11 or physical Intel hardware.
+On macOS, settings and data use `~/Library/Application Support/frequencies`,
+cache uses `~/Library/Caches/frequencies`, and logs use
+`~/Library/Logs/frequencies`, unless the corresponding XDG override is set.
+Existing XDG data is copied without overwriting existing files or deleting the
+originals. macOS updates are offered as manual downloads.
+See [the macOS support plan](docs/macos-support-plan.md) for the remaining work.
+
 <img width="1467" height="1002" alt="Screenshot_20261018_182004" src="https://github.com/user-attachments/assets/7e057a12-ba5b-4a46-96ea-c40dfbf6b15e" />
 
 Frequencies is a stylish internet radio player that is simple on the surface, but built on a powerful framework which allows for a lot of room for customization and options. It sets out to provide a rich, unified, modern day feature set for making listening to the radio as user friendly as streaming on Spotify, but more flexible than most other radio streaming applications.   
