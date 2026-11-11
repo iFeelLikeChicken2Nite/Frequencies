@@ -4,7 +4,7 @@ ___________________________________
 
 # Install version 153 for [Windows 🪟](https://github.com/iFeelLikeChicken2Nite/frequencies-releases/releases/download/build-153/Frequencies-Setup.exe) 
 # Install Appimage version 153 for [Linux 🐧](https://github.com/iFeelLikeChicken2Nite/frequencies-releases/releases/download/build-153/Frequencies-x86_64.AppImage)
-Tested and confirmed working with Fedora, SteamOS, and Ubuntu. More testing coming soon!
+# There is also an experimental [fork for macOS 🍎 (It works with Rosetta, so it should support Intel and Silicon!)](https://github.com/DougM69/Frequencies/tree/macos-support)
 
 ## Experimental macOS build
 
