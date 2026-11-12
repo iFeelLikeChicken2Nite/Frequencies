@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The UI tests' host activity (from compose ui-test-manifest) comes with a
+  light theme; a phone with "make more apps dark" then inverts its window
+  and the tests see inverted colors. Give it the app's own theme.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <activity
+            android:name="androidx.activity.ComponentActivity"
+            android:theme="@style/Theme.Frequencies"
+            tools:replace="android:theme" />
+    </application>
+</manifest>
