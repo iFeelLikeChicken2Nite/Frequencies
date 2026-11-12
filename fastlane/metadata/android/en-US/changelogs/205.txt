@@ -1,0 +1,1 @@
+* Station health checks no longer report slow-to-start stations as down: a check now waits as long as the player does, opens .pls and .m3u playlists the way the player does, and tries once more before calling a station down.

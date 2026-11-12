@@ -1,0 +1,3 @@
+* Comfort View: the artwork moves aside after 7 seconds. Choose 5 to 20 seconds in Settings > Appearance.
+* Settings: an arrow and a fade show there are more tabs; swipe or tap the arrow to see them.
+* Six new YouTube stations for new installs.

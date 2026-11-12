@@ -1,0 +1,2 @@
+* Android Auto: the tabs are now Saved, Tags and History. Tags shows every tag as a tile in its own color; a tap turns it to only these, then hide these, then off, and Saved, Next, Previous and Shuffle follow it.
+* Android Auto: Saved is a plain list again, and the tag buttons are gone from Now Playing.

@@ -1,0 +1,2 @@
+* Now Playing: a Save button for a frequency you are listening to but have not saved yet; it turns into a green check with "Saved!" and goes away after 10 seconds.
+* Settings: Accounts is now Connections, and the Pebble app that may connect moved there; the Pebble settings are rows with icons, and Watch theme now offers "Match phone theme" in its list.

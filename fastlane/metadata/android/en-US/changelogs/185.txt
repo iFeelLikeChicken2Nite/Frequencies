@@ -1,0 +1,2 @@
+* Fixed Android Auto freezing the app with a large station list: stations got stuck on static, and the app and then the phone slowed to a halt.
+* Android Auto: Saved's tags are one row again, two at a time, with arrows on the sides for more.

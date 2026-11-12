@@ -49,6 +49,11 @@ hidden = [os.path.splitext(os.path.basename(path))[0]
           for path in glob.glob(os.path.join(SRC, "*.py"))
           if not path.endswith(("main.py", "main_legacy.py"))]
 
+# Sync with paired devices (task 126): zeroconf has compiled parts that
+# are only imported from inside the package.
+from PyInstaller.utils.hooks import collect_submodules
+hidden += collect_submodules("zeroconf") + ["ifaddr", "cryptography"]
+
 a = Analysis(
     [os.path.join(SRC, "main.py")],
     pathex=[SRC],

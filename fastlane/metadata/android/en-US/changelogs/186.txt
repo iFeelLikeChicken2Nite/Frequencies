@@ -1,0 +1,3 @@
+* Tag filters now decide what Next, Previous and Shuffle play, in the app and in Android Auto, not just which frequencies are listed.
+* Android Auto: smaller tag tiles without the "Tags" and "Frequencies" headings, a Song ID button that shows when it's off, and no thumbs down or queue button.
+* Android Auto: every tag also has its own button under Now Playing's ⋯ menu. Each tap walks it off, only these, hide these, and Next, Previous and Shuffle follow at once.

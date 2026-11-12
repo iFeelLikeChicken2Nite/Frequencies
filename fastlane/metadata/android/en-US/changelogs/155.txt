@@ -1,0 +1,7 @@
+* Offline mode: stations that need the internet are grayed out, and local music keeps playing.
+* Local files stations: a folder of your own music plays like a station. Share zips can carry the music.
+* Talk stations go quiet during spoken prompts instead of pausing.
+* Lyrics not found? A "Search the web" link.
+* Thumbs-down reports wait until you're back online.
+* A station can play with a broken certificate (that station only).
+* No more footnote marks like [2] in bios.

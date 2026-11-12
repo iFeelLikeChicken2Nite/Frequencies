@@ -1,0 +1,1 @@
+* Pebble: the artist photo reaches the watch every time: it is sent again when the artist lookup finishes or the artist changes while the bio is open, and a photo that failed to load is tried again.

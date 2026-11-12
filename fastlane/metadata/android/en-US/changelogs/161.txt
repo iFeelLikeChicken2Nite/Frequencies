@@ -1,0 +1,3 @@
+* Sharing a frequency with a picture of your own puts the picture online, so the QR code brings the full-size picture to the other phone or computer.
+* Pre-buffering for stations that keep dropping out: Station settings > Sound > Pre-buffer this station.
+* Twitch channels get the opening-ad controls in Station settings > Sound: cover on or off, how long, and which frequency covers it.

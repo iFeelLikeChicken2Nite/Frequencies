@@ -283,9 +283,15 @@ if [ "${APP_ARCH}" = "aarch64" ]; then
     # segno writes QR codes; zxing-cpp reads them back. Both ship as
     # wheels, so neither needs anything installed on the machine.
     ./venv/bin/pip install python-mpv requests segno zxing-cpp
+    # Sync with paired devices (task 126): zeroconf finds them on the
+    # network, cryptography encrypts what goes between them. Both wheels.
+    ./venv/bin/pip install --ignore-installed zeroconf ifaddr cryptography
 else
     ./venv/bin/pip install "PyQt5==5.15.11" python-mpv requests segno \
         zxing-cpp
+    # Sync with paired devices (task 126): zeroconf finds them on the
+    # network, cryptography encrypts what goes between them. Both wheels.
+    ./venv/bin/pip install zeroconf ifaddr cryptography
     # The embedded browser: lyrics from sites that block scrapers, and
     # picking station art from an image search. Optional - the app falls
     # back to the system browser if this isn't present - but it is a

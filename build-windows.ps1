@@ -44,6 +44,7 @@ if (-not (Test-Path $py)) {
 Write-Host "==> Python packages"
 & $py -m pip install --quiet "PyQt5==5.15.11" "PyQtWebEngine==5.15.7" `
     python-mpv requests segno zxing-cpp yt-dlp shazamio-core pyaudiowpatch `
+    zeroconf ifaddr cryptography `
     zstandard pyinstaller winrt-runtime winrt-Windows.Foundation `
     winrt-Windows.Media winrt-Windows.Media.Playback `
     winrt-Windows.Storage.Streams

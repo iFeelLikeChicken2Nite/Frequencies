@@ -1,0 +1,4 @@
+* Long song titles on Now Playing take a third line or a smaller size before they are cut off; the band logo shrinks to make room.
+* Android Auto: no progress bar, and the station's name always shows under the song. New Favorite and Song ID buttons; the small player on the car's home screen has Favorite in place of Previous.
+* Android Auto: Saved starts with your tags as a list you tap to show only those stations, tap again to hide them, and again to clear. Every saved station shows now, in A to Z groups when there are many.
+* Android Auto: Recent lists the songs you heard; tap one to play its station. The tuning static is a little louder in the car.

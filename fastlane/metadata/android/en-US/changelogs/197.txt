@@ -1,0 +1,3 @@
+* Android Auto: the line under the song now shows the artist and the station in turn, switching every 7 seconds, so neither gets cut off.
+* Android Auto: Saved has its own order in the car, most played first unless you pick another in Settings > Appearance > Android Auto.
+* With a weak signal, when no stream has played for 15 seconds, a music folder station on the phone takes over, as it does when the internet is gone.

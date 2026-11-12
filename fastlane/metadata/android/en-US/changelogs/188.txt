@@ -1,0 +1,3 @@
+* Tags that are on now look solid in their color, on the phone and in Android Auto, so on and off are easy to tell apart.
+* Android Auto: tapping a tag tile changes it in place; Back leaves the Tags tab right away, and Saved follows the tags.
+* Fixed the app freezing for a few seconds when tapping Song ID or Shuffle while it checks for changes to sync.

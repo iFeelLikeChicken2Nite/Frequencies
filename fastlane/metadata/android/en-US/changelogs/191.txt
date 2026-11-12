@@ -1,0 +1,3 @@
+* Pebble: big libraries now load in Saved Frequencies, with sharper icons, smoother pictures, bigger clocks and taller rows.
+* Pebble: Volume slider at the top of the actions menu, a smoother growing picture, longer holds, and swipe in from the left edge to go back.
+* Pebble: the song's picture no longer flickers back to the station's when Song ID briefly loses the song.

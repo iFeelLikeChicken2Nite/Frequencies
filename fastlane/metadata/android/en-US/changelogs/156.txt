@@ -1,0 +1,6 @@
+* iBroadcast: sign in and play your library or a playlist as a station.
+* YouTube playlists and Twitch channels as stations. A Twitch channel's opening ad is covered with another of your stations.
+* New Browse tab: today's featured stations and the directory's most listened, trending, random and new.
+* Band logos in place of the artist's name.
+* Static changes as it plays and stays until the station can really be heard.
+* Short tips the first time, which Settings can bring back.

@@ -33,6 +33,8 @@ rm -rf venv
 python3 -m venv venv
 ./venv/bin/pip install --upgrade pip
 ./venv/bin/pip install "PyQt5==5.15.11" python-mpv requests
+# Sync with paired devices (task 126).
+./venv/bin/pip install zeroconf ifaddr cryptography
 # yt-dlp powers YouTube custom stations. Optional at runtime - without
 # it those stations say so rather than failing oddly - but bundling it
 # means they work without a separate install. It is also the one

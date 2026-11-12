@@ -1,0 +1,2 @@
+* A station whose connection keeps breaking no longer tries to connect over and over: after a few tries the next station takes over.
+* On the Artist page, the artist photo no longer shrinks by itself when the biography is too short to fill the screen.

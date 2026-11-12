@@ -32,6 +32,8 @@ there. This file explains the main parts.
 | requests, urllib3, certifi, idna, charset-normalizer | Talk to websites | Apache 2.0, MIT, MPL 2.0, BSD |
 | segno | Draws QR codes | BSD 3-clause |
 | zxing-cpp | Reads QR codes | Apache 2.0 |
+| zeroconf, ifaddr | Find your other devices for sync | LGPL v2.1 or later, MIT |
+| cryptography (with cffi, pycparser) | Encrypts sync between your devices | Apache 2.0 or BSD, MIT, BSD |
 | yt-dlp | YouTube stations | Unlicense (public domain) |
 | shazamio-core | Song fingerprints | MIT |
 | Everything else in `bundled-parts.txt` | Libraries those need | As listed there |

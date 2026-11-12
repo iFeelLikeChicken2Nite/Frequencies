@@ -105,8 +105,9 @@ def ship_addresses():
     print("    pack address: " + own.get("pack", "(none)"))
     print("    reports repository: " + ("set" if own.get("reports")
                                     else "(none: thumbs down uses the pack address's repository)"))
-    print("    report address: " + (own.get("report_service") or "(none: "
-                                    "thumbs down opens the browser)"))
+    print("    report address: " + ("shipped" if own.get("report_service")
+                                      else "(none: thumbs down opens "
+                                      "the browser)"))
     print("    picture link address: " + (own.get("art") or "(none: shared "
                                           "pictures of your own travel as thumbnails)"))
 

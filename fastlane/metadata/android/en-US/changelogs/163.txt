@@ -1,0 +1,4 @@
+* Now Playing has a moving background: soft colors from the accent drift slowly behind the lyrics. Settings > Appearance > "Moving background": Auto, Always or Off. Auto stands still in Battery Saver and when the battery is low.
+* On its side, Now Playing has its own layout, with the lyrics in the middle in Comfort.
+* Tablets and unfolded foldables: the cover moves aside too, and the lyrics take the room.
+* The band's logo shows on the artist's photo.

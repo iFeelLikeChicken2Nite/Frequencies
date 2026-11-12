@@ -1,0 +1,3 @@
+* Station health checks now run again when you come back to the app after 30 minutes, and retry when the internet comes back after an offline start.
+* Settings > Station health checks lists every sweep (started, finished with counts, or skipped and why) and keeps it between launches.
+* Fixed a freeze when flipping a Settings switch during a sync.

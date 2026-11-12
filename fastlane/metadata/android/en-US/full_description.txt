@@ -1,0 +1,34 @@
+Frequencies is an internet radio player that feels like turning a real dial. Save your favorite stations, tune between them with real radio static, and see what is playing.
+
+<b>Listening</b>
+* Plays internet radio streams (Icecast, Shoutcast, HLS, .pls and .m3u links)
+* Real radio static while a station tunes in
+* Song and artist from the station, in the app, the notification, the lock screen and Bluetooth
+* Sleep timer, per-station volume trim and equalizer
+* Skips stations that are down, and checks your saved stations now and then
+
+<b>Finding and keeping stations</b>
+* Search thousands of stations from the free Radio Browser directory, or add any stream address
+* Browse today's featured stations and the directory's most listened, trending and new
+* Play your iBroadcast library, a YouTube playlist or a live Twitch channel like a station
+* Sort, search and tag your saved stations
+* Share a station as a QR code or a share file; scan codes with the camera
+* Import and export M3U, PLS, XSPF, OPML and other radio apps' lists
+* Full backup that moves your stations between the phone and the Frequencies desktop app
+* A schedule of your favorite shows, with "live now" badges and reminders
+
+<b>Now Playing</b>
+* Song ID: names the song a station is playing
+* Live, timed lyrics
+* Artist biographies and photos
+* A history of every song you heard, with favorites
+* 22 color themes, and an accent color that can follow the station's artwork
+
+<b>Android Auto</b>
+Your saved stations, recent stations, tags and live shows in the car, with voice search ("play KXCI on Frequencies").
+Android Auto only shows apps that don't come from the Play Store after you turn on "Unknown sources" in Android Auto's developer settings.
+
+<b>Network services</b>
+Song ID uses Shazam's service, and some artist pictures, biographies and station pictures come from Apple, Deezer, Discogs and TuneIn. iBroadcast, YouTube and Twitch stations use those services. These are non-free network services, so F-Droid marks the app NonFreeNet. Everything else works without them: playing, saving, sharing, static, the schedule and Android Auto. Lyrics come from LRCLIB and lyrics.ovh, artist facts from MusicBrainz and Wikipedia, and station search from Radio Browser.
+
+Frequencies has no ads and no tracking. It is free software under the GNU GPL v3 or later.
