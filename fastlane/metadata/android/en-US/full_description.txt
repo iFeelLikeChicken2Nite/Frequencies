@@ -1,34 +1,24 @@
-Frequencies is an internet radio player that feels like turning a real dial. Save your favorite stations, tune between them with real radio static, and see what is playing.
+Frequencies is a modern, stylish internet radio player that reignites the nostalgia of turning a real dial. Save your favorite stations, tune between them with simulated static, and see what is playing. Simple, yet powerful. Decline the algorithm, and rediscover radio.
 
-<b>Listening</b>
-* Plays internet radio streams (Icecast, Shoutcast, HLS, .pls and .m3u links)
-* Real radio static while a station tunes in
-* Song and artist from the station, in the app, the notification, the lock screen and Bluetooth
-* Sleep timer, per-station volume trim and equalizer
-* Skips stations that are down, and checks your saved stations now and then
+On top of what typical radio apps do, like streaming from URLs and browsing radio station directories, Frequencies gives you much more:
 
-<b>Finding and keeping stations</b>
-* Search thousands of stations from the free Radio Browser directory, or add any stream address
-* Browse today's featured stations and the directory's most listened, trending and new
-* Play your iBroadcast library, a YouTube playlist or a live Twitch channel like a station
-* Sort, search and tag your saved stations
-* Share a station as a QR code or a share file; scan codes with the camera
-* Import and export M3U, PLS, XSPF, OPML and other radio apps' lists
-* Full backup that moves your stations between the phone and the Frequencies desktop app
-* A schedule of your favorite shows, with "live now" badges and reminders
-
-<b>Now Playing</b>
-* Song ID: names the song a station is playing
+* Create custom stations from local files, YouTube, Twitch streams and iBroadcast libraries
+* A tag system for easily queuing the stations you want
+* Built-in song recognition (Song ID, using Shazam's service)
+* Cover the forced ads on some stations with your own music
+* A regularly updated list of recommended stations, hand-picked by me, a human
+* Per-station equalizer
+* Volume leveling across stations
+* A log of the songs you heard, from Song ID
+* Change a station's displayed name and artwork
+* Easy, modern sharing options
+* Automatic skipping of stations that are down
 * Live, timed lyrics
-* Artist biographies and photos
-* A history of every song you heard, with favorites
-* 22 color themes, and an accent color that can follow the station's artwork
+* Artist biographies
+* Android Auto and Pebble support
+* Sync between your devices on your network
 
-<b>Android Auto</b>
-Your saved stations, recent stations, tags and live shows in the car, with voice search ("play KXCI on Frequencies").
-Android Auto only shows apps that don't come from the Play Store after you turn on "Unknown sources" in Android Auto's developer settings.
+Note that for Android Auto, you'll have to turn on "Unknown sources" in Android Auto's developer settings. This is a Google restriction for apps that don't come from the Play Store, and no app can get around it.
 
 <b>Network services</b>
-Song ID uses Shazam's service, and some artist pictures, biographies and station pictures come from Apple, Deezer, Discogs and TuneIn. iBroadcast, YouTube and Twitch stations use those services. These are non-free network services, so F-Droid marks the app NonFreeNet. Everything else works without them: playing, saving, sharing, static, the schedule and Android Auto. Lyrics come from LRCLIB and lyrics.ovh, artist facts from MusicBrainz and Wikipedia, and station search from Radio Browser.
-
-Frequencies has no ads and no tracking. It is free software under the GNU GPL v3 or later.
+Song ID uses Shazam's service. You can also choose to download separately hosted non-free files that enhance the experience (off by default, and the app never nags you about it). Because the app uses services like Shazam, YouTube and Twitch, F-Droid marks it NonFreeNet. Everything else works without them: playing, saving, sharing, static, the schedule and Android Auto. Lyrics come from LRCLIB and lyrics.ovh, artist facts from MusicBrainz and Wikipedia, and station search from Radio Browser.
