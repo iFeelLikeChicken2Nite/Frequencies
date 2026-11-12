@@ -4,6 +4,7 @@ ___________________________________
 
 # Install version 153 for [Windows 🪟](https://github.com/iFeelLikeChicken2Nite/frequencies-releases/releases/download/build-153/Frequencies-Setup.exe) 
 # Install Appimage version 153 for [Linux 🐧](https://github.com/iFeelLikeChicken2Nite/frequencies-releases/releases/download/build-153/Frequencies-x86_64.AppImage)
+# Install GitHub release of version 207 for [Android 🤖](https://github.com/iFeelLikeChicken2Nite/frequencies-android-releases/releases/download/1.5.207/Frequencies-1.5.207.apk)
 # There is also an experimental [fork for macOS 🍎 (It works with Rosetta, so it should support Intel and Silicon!)](https://github.com/DougM69/Frequencies/tree/macos-support)
 
 <img width="1467" height="1002" alt="Screenshot_20261018_182004" src="https://github.com/user-attachments/assets/7e057a12-ba5b-4a46-96ea-c40dfbf6b15e" />
@@ -25,16 +26,21 @@ On top of your typical radio apps that allow you to stream from URLs and browse 
 * A regularly updated list of recommended radio stations that are hand picked by me, a human
 * Per station equalizer options
 * Volume equalization across stations
+* Live, timed lyrics
 * Optional, immersive static to bridge the silent gap between stations
 * Song logging based on Shazam recognition
 * A built in, experimental web browser designed to let you easily "steal" an embedded audio player's stream URL from a list 
 * Ability to change station's displayed name and associated artwork
+* Automatic skipping of stations that are down
 * Easy, modern sharing options
 * Winamp skin support
+* Artist biographies
 * Built in Project M visualizers
+* Ability to sync between devices on your network
+* Android Auto and Pebble support
 * Compatibility with over 10 popular radio apps
 
-...and coming down the line, nearly full feature parity with an Android port, including Android Auto compatibility (I would love to include iOS, but that has costs I can't afford, I am thinking of building a solution for forwarding audio to iOS etc though)
+# Note that for Android Auto, you'll have to enable "Unknown sources" in Android Auto's developer settings. This is a Play Store restriction that Google won't allow us to get around.
 
 <img width="1525" height="1073" alt="Screenshot_20261018_185817" src="https://github.com/user-attachments/assets/b7a80730-3a15-4401-8fbd-89b33415d8da" />
 
