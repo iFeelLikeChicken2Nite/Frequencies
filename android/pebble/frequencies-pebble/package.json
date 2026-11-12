@@ -1,0 +1,104 @@
+{
+  "name": "frequencies-pebble",
+  "author": "Frequencies",
+  "version": "1.0.10",
+  "keywords": [
+    "pebble-app"
+  ],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "Frequencies",
+    "uuid": "45e9b1e5-580c-414a-a559-e7a31f438d51",
+    "sdkVersion": "3",
+    "targetPlatforms": [
+      "emery",
+      "basalt",
+      "diorite",
+      "flint",
+      "chalk",
+      "gabbro"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "messageKeys": {
+      "PROTOCOL": 0,
+      "CMD": 1,
+      "ARG": 2,
+      "ARG2": 3,
+      "TEXT": 4,
+      "WATCH": 5,
+      "STATION": 10,
+      "SONG": 11,
+      "ARTIST": 12,
+      "STATE": 13,
+      "FLAGS": 14,
+      "SLEEP_LEFT": 15,
+      "SLEEP_ACTION": 16,
+      "AD_LEFT": 17,
+      "POS": 18,
+      "COUNT": 19,
+      "THEME": 20,
+      "PREFS": 21,
+      "THEME_NAME": 22,
+      "SORT": 23,
+      "TAGS": 24,
+      "VOLUME": 25,
+      "ART_ID": 30,
+      "ART_KIND": 31,
+      "ART_W": 32,
+      "ART_H": 33,
+      "ART_OFFSET": 34,
+      "ART_DATA": 35,
+      "ART_TOTAL": 36,
+      "ART_SLOT": 37,
+      "LIST_KIND": 40,
+      "LIST_TOTAL": 41,
+      "LIST_START": 42,
+      "LIST_ROWS": 43,
+      "BIO_NAME": 50,
+      "BIO_TEXT": 51,
+      "BIO_FROM": 52,
+      "VERDICT": 53,
+      "THUMBS_LEFT": 54,
+      "THUMBS_WHAT": 55,
+      "LYRIC_PREV": 60,
+      "LYRIC_CUR": 61,
+      "LYRIC_NEXT": 62,
+      "LYRIC_STATE": 63,
+      "STATION_SET": 26,
+      "STATION_COVER": 27
+    },
+    "resources": {
+      "media": [
+        {
+          "type": "bitmap",
+          "name": "ICON",
+          "file": "images/icon.png",
+          "menuIcon": true
+        },
+        {
+          "type": "bitmap",
+          "name": "SHRUG",
+          "file": "images/shrug.png",
+          "memoryFormat": "1BitPalette"
+        }
+      ]
+    },
+    "capabilities": [],
+    "companionApp": {
+      "android": {
+        "url": "https://github.com/iFeelLikeChicken2Nite/Frequencies",
+        "apps": [
+          {
+            "package": "com.frequencies.app.dev"
+          },
+          {
+            "package": "com.frequencies.app"
+          }
+        ]
+      }
+    }
+  }
+}
