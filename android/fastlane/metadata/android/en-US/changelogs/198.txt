@@ -1,0 +1,6 @@
+* A station that drops reconnects by itself, then moves on to the next one that plays. No more "Source error" in the car.
+* Now Playing: drag down from the top to close it. Talk stations open on Artist. The cover stays big until lyrics or bio show.
+* YouTube stations start each next song from the top, with its own info.
+* No favorites for music folder or iBroadcast songs.
+* Fixed freezes in Sync settings. The sync icon only spins while syncing.
+* Station settings: photo moved to Display.

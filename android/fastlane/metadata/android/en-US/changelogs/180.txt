@@ -1,0 +1,1 @@
+* Now Playing: the Song ID button uses the same Shazam mark as the desktop (gray when off, lit when on), filling with color from the middle when a song is found.

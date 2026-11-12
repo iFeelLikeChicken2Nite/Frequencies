@@ -1,0 +1,2 @@
+* Tags are now one filter for the phone and Android Auto: a tag changed on either one shows on the other right away.
+* Android Auto: tapping a tag tile no longer gets stuck on "Getting your selection…"; the station playing keeps going.

@@ -1,0 +1,4 @@
+* Add screen: no search bar on top. New tiles: Search, Import QR code, Scan QR code.
+* Featured: "Previously featured frequencies…" lists every station featured before.
+* Featured cards no longer show where a station streams from.
+* Discover: the Name list is gone.

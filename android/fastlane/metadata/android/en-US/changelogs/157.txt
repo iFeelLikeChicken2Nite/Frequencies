@@ -1,0 +1,6 @@
+* A new look to match the desktop app: its fonts, icons and colors in every theme.
+* Saved Frequencies in flat striped rows. The one playing lights up with its song and moving bars.
+* The player bar and Now Playing in the desktop's style, with the Comfort View glow behind Now Playing.
+* On tablets and in landscape, a sidebar with your tags and the desktop's full player bar.
+* Settings in the desktop's tabs.
+* The desktop's icon animations: play, the star, Song ID, the sleep timer and more.

@@ -1,0 +1,2 @@
+* Sync: when your phone and your computer both had the same frequency before pairing, the first sync now keeps the larger play count, the latest time played and both sets of tags, instead of losing one side's.
+* The "Custom station frequency" setting is gone. Shuffle picks every frequency equally.

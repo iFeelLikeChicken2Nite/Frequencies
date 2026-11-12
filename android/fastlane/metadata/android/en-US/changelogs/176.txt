@@ -1,0 +1,3 @@
+* iBroadcast: a track iBroadcast won't send no longer stops the whole station; the next track plays instead.
+* iBroadcast: when it stops, Now Playing says why in plain words (and what iBroadcast said) instead of "The station's server said no."
+* Now Playing: band logos under the song name can be bigger.

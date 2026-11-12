@@ -1,0 +1,5 @@
+* Sync: fixed the phone freezing during a sync with a big library, so station pictures now arrive and the spinner stops.
+* Sync: the phone keeps listening while it sends, so two devices with hundreds of stations no longer wait on each other.
+* Station tiles never show up blank: the letter shows until the station has a picture of its own.
+* Now Playing: a Song ID button next to the song menu and the star turns song identification on or off for the station.
+* Comfort View only comes in on its own when Song ID is on (or on a talk station with its own description, on the Artist page).

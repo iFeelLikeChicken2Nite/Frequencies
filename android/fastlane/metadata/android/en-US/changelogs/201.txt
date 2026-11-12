@@ -1,0 +1,1 @@
+* Now Playing, Artist page: when the bio is too short to fill the screen, the artist photo opens big.

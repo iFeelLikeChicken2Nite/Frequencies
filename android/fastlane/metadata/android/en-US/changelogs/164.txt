@@ -1,0 +1,1 @@
+* Sync with your computer: Settings > Library and tools > Sync with another device. Pair once by scanning the QR code in the desktop app's Pair a device… window (or typing its code). After that, your frequencies, tags, stars, History and look stay the same on both whenever Frequencies is open on each, on the same Wi-Fi. Nothing goes through the internet.

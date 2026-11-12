@@ -1,0 +1,1 @@
+* Pebble: no star on the watch's Now Playing for songs that can't be favorites (music folder, iBroadcast).

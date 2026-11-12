@@ -1,0 +1,2 @@
+* Any station can now cover its opening ad with another of your frequencies (Station settings > Sound), not just Twitch. The hourglass shows while the ad is covered, and the setting syncs with your computer.
+* Tapping the magnifying glass in Saved Frequencies puts the cursor in the search box and opens the keyboard.

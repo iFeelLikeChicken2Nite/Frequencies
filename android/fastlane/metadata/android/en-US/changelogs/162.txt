@@ -1,0 +1,3 @@
+* Now Playing and Comfort View are one screen: after 20 seconds without a touch the artwork moves aside and the lyrics or biography fill the screen. Tap the artwork or the corners button to switch.
+* Shuffle: a new button beside Next picks a random frequency, also in the notification and Android Auto. Previous goes back to the one before.
+* Settings: "Fade into Comfort on its own", "Keep the screen on in Comfort" and "Custom station frequency".

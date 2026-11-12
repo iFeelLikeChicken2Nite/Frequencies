@@ -1,0 +1,1 @@
+* Stations now play at an even loudness, as on the desktop: quiet ones come up and loud ones come down. Turn it off in Settings > Sound > "Even out loudness between stations".

@@ -1,0 +1,3 @@
+* Pebble: a bigger, sharper picture when Now Playing grows, with the artist and station taking turns under the song (choose in Settings › Pebble).
+* Pebble: pull the artist bio up or the lyrics down and they follow your thumb; the shuffle arrows straighten when it's off.
+* Pebble: no more scanner along the bottom, a one-time tip about the swipes, and a hold let go early no longer counts as a press.

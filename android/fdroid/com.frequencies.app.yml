@@ -1,0 +1,33 @@
+AntiFeatures:
+  NonFreeNet:
+    en-US: Song ID uses Shazam's service; YouTube stations use YouTube; some artist
+      and station pictures and biographies come from Apple, Deezer, Discogs and TuneIn.
+      The rest of the app works without them.
+Categories:
+  - Multimedia
+  - Radio
+License: GPL-3.0-or-later
+SourceCode: https://github.com/iFeelLikeChicken2Nite/Frequencies
+IssueTracker: https://github.com/iFeelLikeChicken2Nite/Frequencies/issues
+
+AutoName: Frequencies
+
+RepoType: git
+Repo: https://github.com/iFeelLikeChicken2Nite/Frequencies.git
+
+Builds:
+  - versionName: 1.5.207
+    versionCode: 207
+    commit: android-1.5.207
+    subdir: android/app
+    gradle:
+      - fdroid
+    rm:
+      - android/tools/songid-harness
+      - android/pebble
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags ^android-
+UpdateCheckData: android/gradle.properties|frequencies\.build=(\d+)||android-(.+)
+CurrentVersion: 1.5.207
+CurrentVersionCode: 207

@@ -1,0 +1,1 @@
+* Shuffle is on by default on a new install. If you already use the app, your shuffle setting stays as it was, and syncing with a computer never flips it.

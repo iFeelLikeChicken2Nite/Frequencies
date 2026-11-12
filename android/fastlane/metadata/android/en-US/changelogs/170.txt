@@ -1,0 +1,5 @@
+* Frequensync: choose what to sync with each computer. First syncs keep the settings you changed.
+* New bottom bar: Saved, Add, History, Schedule, Settings. Add now holds Featured and Discover.
+* Tiled view for Saved Frequencies, bigger tag pills, and a dark and a light theme for System.
+* Drag the player bar up to open Now Playing. It now has previous and next.
+* Talk radio switch, framed QR codes and missing band logos. Stations with old certificates now play.

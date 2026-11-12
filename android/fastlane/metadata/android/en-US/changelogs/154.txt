@@ -1,0 +1,3 @@
+First F-Droid release.
+* Thumbs-down reports on wrong artist info go through the developer's report service; the app holds no token of any kind.
+* Builds from the public source alone.

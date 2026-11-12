@@ -1,0 +1,2 @@
+* Pebble: the artist bio opens with a big photo that moves aside as you read; Up and Down scroll, the text glides after a flick, and thumbs down is a Select hold.
+* Pebble: pull the bio back down or the lyrics back up to return to Now Playing; tag rows stay readable when chosen.

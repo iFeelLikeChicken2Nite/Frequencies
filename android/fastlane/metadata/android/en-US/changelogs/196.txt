@@ -1,0 +1,1 @@
+* Pebble: Station settings at the bottom of Now Playing's hold-Select menu on the watch: the playing station's volume, equalizer, opening ad cover, pre-buffering and talk radio, changed from the watch.
