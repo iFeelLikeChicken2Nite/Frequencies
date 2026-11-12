@@ -37,24 +37,82 @@ import shazam
 
 _log = player._log
 
-USER_AGENT = "Frequencies/1.5"
+# The same name the player gives stream servers (player.STREAM_AGENT).
+USER_AGENT = player.STREAM_AGENT
 
 # How much of a stream we pull before calling it reachable. We only need
 # to know that bytes are flowing.
 PROBE_BYTES = 2048
-# (connect, read). Kept short so a stalled server can't hold the
-# background thread open long enough to matter at shutdown - a dead
-# Icecast mount often accepts the connection and then says nothing.
-PROBE_TIMEOUT = (3, 5)
+# (connect, read): the time the player gives a stream to start making
+# sound before it calls it down (player.CONNECT_TIMEOUT, 10 s). Until
+# build 204 this was (3, 5): servers that take a few seconds to send
+# their first byte (every StreamTheWorld station, CJLM among them, waits
+# about 5.5 s) played fine but were marked down by every check (task 247).
+PROBE_TIMEOUT = (player.CONNECT_TIMEOUT, player.CONNECT_TIMEOUT)
+# One more try, this long after a failure, before calling a station down.
+# Not after an HTTP 4xx: "not found" or "forbidden" is the server's
+# answer, not a hiccup.
+PROBE_RETRY_PAUSE = 2.0
+# A .pls / .m3u: how many of the streams it lists to try (the player
+# moves on through them too), and how deep playlists may nest.
+PROBE_LISTED_MAX = 4
+PROBE_NEST_MAX = 2
+# What a server calls a playlist file (HLS is told apart by its text).
+PLAYLIST_TYPES = ("audio/x-scpls", "audio/scpls", "application/pls+xml",
+                  "audio/x-mpegurl", "audio/mpegurl", "application/x-mpegurl",
+                  "application/vnd.apple.mpegurl")
 
 
-def probe_stream(url, timeout=PROBE_TIMEOUT):
-    """Try to actually receive audio bytes from a stream URL.
+def probe_stream(url, timeout=PROBE_TIMEOUT, retry=True):
+    """Ask a station what the player asks it: does sound start in time?
 
     Returns (ok, reason). A HEAD request isn't enough - plenty of
     Icecast/Shoutcast servers answer HEAD fine while the mount point is
-    dead, so we open the stream and wait for real bytes.
+    dead, so we open the stream and wait for real bytes. A playlist
+    (.pls / .m3u) is opened the way the player opens it: the station is
+    up when one of the streams it lists sends audio, not when the little
+    text file itself arrives (build 204, task 247).
     """
+    ok, reason = _probe(url, timeout, 0)
+    if ok or not retry or reason.startswith("HTTP 4"):
+        return ok, reason
+    time.sleep(PROBE_RETRY_PAUSE)
+    ok, again = _probe(url, timeout, 0)
+    if ok:
+        _log(f"[health] {url[:80]}: answered on the second try "
+             f"(first: {reason})")
+        return True, ""
+    return False, again or reason
+
+
+def _looks_like_playlist(response, head):
+    """A playlist file (.pls / .m3u), as mpv tells one: by its type or
+    its first line. An HLS manifest isn't one: the player plays it."""
+    if b"#EXT-X-" in head:
+        return False
+    kind = (response.headers.get("content-type") or "").split(";")[0]
+    start = head.lstrip()[:16].lower()
+    return (kind.strip().lower() in PLAYLIST_TYPES
+            or start.startswith((b"[playlist]", b"#extm3u", b"http://",
+                                 b"https://")))
+
+
+def _probe_listed(text, timeout, depth):
+    """The streams a playlist lists, tried in order until one answers."""
+    import playlists
+    urls = playlists.listed_urls(text)[:PROBE_LISTED_MAX]
+    if not urls:
+        return False, "playlist lists no streams"
+    reason = ""
+    for listed in urls:
+        ok, reason = _probe(listed, timeout, depth + 1)
+        if ok:
+            return True, ""
+    return False, f"no listed stream answered ({reason})"
+
+
+def _probe(url, timeout, depth):
+    """One try at one address: (ok, reason)."""
     try:
         response = requests.get(
             url,
@@ -63,19 +121,86 @@ def probe_stream(url, timeout=PROBE_TIMEOUT):
             stream=True,
         )
     except requests.RequestException as exc:
+        if "ICY 200" in str(exc):
+            # An old SHOUTcast server: it answers "ICY 200 OK", which
+            # Python's http refuses outright, so every such station was
+            # marked down (task 220, most of Radio Caprice). Playing it
+            # goes through the app's relay (icyrelay.py).
+            ok, reason = probe_icy(url, timeout)
+            if ok:
+                import icyrelay
+                icyrelay.remember(url)
+            return ok, reason
         return False, type(exc).__name__
 
     try:
         if response.status_code >= 400:
             return False, f"HTTP {response.status_code}"
+        got = b""
         for chunk in response.iter_content(chunk_size=PROBE_BYTES):
-            if chunk:
+            if not chunk:
+                continue
+            if not got and not (depth < PROBE_NEST_MAX and
+                                _looks_like_playlist(response, chunk)):
                 return True, ""
+            got += chunk
+            if len(got) >= 64 * 1024:
+                break
+        if got:
+            return _probe_listed(got.decode("utf-8", "replace"), timeout,
+                                 depth)
         return False, "no audio data"
     except requests.RequestException as exc:
         return False, type(exc).__name__
     finally:
         response.close()
+
+
+def probe_icy(url, timeout=PROBE_TIMEOUT):
+    """probe_stream for a server that answers "ICY 200 OK" (SHOUTcast v1).
+
+    The same question over a plain socket: does the answer start with
+    ICY 200 and do audio bytes follow? (ok, reason) like probe_stream.
+    """
+    import socket
+    import ssl
+    import urllib.parse
+    parts = urllib.parse.urlsplit(url)
+    secure = parts.scheme == "https"
+    port = parts.port or (443 if secure else 80)
+    path = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
+    try:
+        sock = socket.create_connection((parts.hostname, port),
+                                        timeout=timeout[0])
+    except OSError as exc:
+        return False, type(exc).__name__
+    try:
+        if secure:
+            sock = ssl.create_default_context().wrap_socket(
+                sock, server_hostname=parts.hostname)
+        sock.settimeout(timeout[1])
+        sock.sendall((f"GET {path} HTTP/1.0\r\nHost: {parts.netloc}\r\n"
+                      f"User-Agent: {USER_AGENT}\r\nIcy-MetaData: 1\r\n"
+                      f"\r\n").encode("latin-1", "replace"))
+        got = b""
+        while len(got) < 64 * 1024:
+            chunk = sock.recv(8192)
+            if not chunk:
+                break
+            got += chunk
+            head, sep, body = got.partition(b"\r\n\r\n")
+            if sep:
+                status = head.split(b"\r\n", 1)[0]
+                if not status.startswith((b"ICY 200", b"HTTP/1.0 200",
+                                          b"HTTP/1.1 200")):
+                    return False, status.decode("latin-1", "replace")[:40]
+                if body:
+                    return True, ""
+        return False, "no audio data"
+    except (OSError, ssl.SSLError) as exc:
+        return False, type(exc).__name__
+    finally:
+        sock.close()
 
 
 class StreamCheck(Job):
@@ -187,6 +312,10 @@ class LaunchCheck(Job):
     """
 
     result = pyqtSignal(str, bool, str)  # station_id, ok, reason
+    # How the sweep went, for the health log (build 202, task 246):
+    # "started", "finished", "offline" (skipped or cut short, worth a
+    # retry), "stopped" (quitting) or "failed" (an error), with a line.
+    outcome = pyqtSignal(str, str)
     OFFLINE_AFTER = 8
 
     def __init__(self, targets, delay=8.0, parent=None):
@@ -199,6 +328,14 @@ class LaunchCheck(Job):
         self._stopping = True
 
     def work(self):
+        try:
+            self._sweep()
+        except Exception as exc:                # noqa: BLE001
+            _log(f"[health] launch check: failed: {exc!r}")
+            self.send(self.outcome, "failed",
+                      f"Stopped by an error ({type(exc).__name__})")
+
+    def _sweep(self):
         from concurrent.futures import ThreadPoolExecutor
         # Let the window settle and the first station start first.
         waited = 0.0
@@ -211,8 +348,15 @@ class LaunchCheck(Job):
         seen_ok = False
         fails = 0
         tally = {True: 0, False: 0}
+        if _offline_now():
+            _log("[health] launch check: skipped, offline")
+            self.send(self.outcome, "offline",
+                      "Skipped: no internet right now")
+            return
         _log(f"[health] launch check: started, {len(self._targets)} saved "
              f"stream(s) to check")
+        self.send(self.outcome, "started",
+                  f"Started: {len(self._targets)} saved stream(s) to check")
 
         def probe(item):
             if self._stopping:
@@ -228,6 +372,7 @@ class LaunchCheck(Job):
             for station_id, ok, reason in pool.map(probe, self._targets):
                 if self._stopping or ok is None:
                     _log("[health] launch check: stopped (quitting)")
+                    self.send(self.outcome, "stopped", "Stopped (quitting)")
                     return
                 tally[bool(ok)] += 1
                 if not seen_ok:
@@ -246,11 +391,17 @@ class LaunchCheck(Job):
                         _log(f"[health] launch check: ended, the first "
                              f"{fails} streams all failed - looks offline, "
                              f"nothing marked")
+                        self.send(self.outcome, "offline",
+                                  f"Cut short: the first {fails} streams all "
+                                  f"failed, looks offline, nothing marked")
                         return
                     continue
                 self.send(self.result, station_id, ok, reason)
         _log(f"[health] launch check: ended, {tally[True] + tally[False]} "
              f"checked, {tally[True]} answered, {tally[False]} no answer")
+        self.send(self.outcome, "finished",
+                  f"Finished: {tally[True] + tally[False]} checked, "
+                  f"{tally[True]} answered, {tally[False]} no answer")
 
 
 class ShazamWorker(Job):

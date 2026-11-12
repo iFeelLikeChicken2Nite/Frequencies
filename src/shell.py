@@ -975,6 +975,11 @@ def _unused_paint_new_badge(widget, right_inset=10):
     p.end()
 
 
+def storage_tip():
+    import storage
+    return storage.NO_FAVORITE_TIP
+
+
 class TagPill(QPushButton):
     """A tag chip whose strike-through is drawn across it.
 
@@ -2786,6 +2791,11 @@ class PlayerBar(QWidget):
             steps=tuple(range(0, 101, 10)), ms=24,
             colour=lambda: T["accent"] if self._sleep_on else T["text2"])
 
+        # Turns while a sync with another device runs, gone otherwise
+        # (build 167, task 223); the window gives it the sync service.
+        import syncicon
+        self.sync_badge = syncicon.SyncBadge(lambda: T["accent"], 18)
+
         self.eq_btn = tool_button("eq", "Equalizer for this station", 22)
         _animate_glyph(self.eq_btn, "eq", 22)
         self.eq_btn.clicked.connect(self.eq_requested.emit)
@@ -2793,6 +2803,7 @@ class PlayerBar(QWidget):
         # Shuffle, then the sleep timer, then the station's settings.
         # It was added to the row before this loop ran, which put it
         # ahead of everything instead of between the two it belongs to.
+        row.addWidget(self.sync_badge)
         for b in (self.shazam_btn, self.shuffle_btn, self.sleep_btn,
                   self.eq_btn, self.full_btn):
             row.addWidget(b)
@@ -3171,6 +3182,33 @@ class PlayerBar(QWidget):
             self.meta.setText(station)
         if pixmap:
             self.set_artwork(pixmap)
+        self.apply_star_lock()
+
+    # Set by the window: answers whether the song playing can be starred.
+    star_allowed = None
+    _star_tip = None
+
+    def apply_star_lock(self):
+        """Gray the star out for songs that can't be favorited (task 241:
+        music-folder and iBroadcast songs). It stays lit if it is lit, so
+        it can still be turned off."""
+        ok = True
+        if self.star_allowed is not None:
+            try:
+                ok = bool(self.star_allowed())
+            except Exception:               # noqa: BLE001
+                ok = True
+        locked = not ok
+        if locked and self._star_tip is None:
+            self._star_tip = self.fav_btn.toolTip()
+        enabled = ok or self.fav_btn.isChecked()
+        if self.fav_btn.isEnabled() != enabled:
+            self.fav_btn.setEnabled(enabled)
+        if locked:
+            self.fav_btn.setToolTip(storage_tip())
+        elif self._star_tip is not None:
+            self.fav_btn.setToolTip(self._star_tip)
+            self._star_tip = None
 
     NOTICE_MS = 6000
 

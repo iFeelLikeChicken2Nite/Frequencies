@@ -293,6 +293,9 @@ READOUT_SOURCES = ("auto", "auto_stream", "custom", "shazam", "stream")
 SORT_MODES = ("manual", "alphabetical", "added", "played", "play_count")
 
 SETTINGS_DEFAULTS = {
+    # Sync with paired devices (build 167, task 223): every 30 minutes and
+    # once at launch; 0 = only Sync now. This device's own, never synced.
+    "sync_interval_minutes": 30,
     # Band logos in place of artists' names (build 141, task 203): on
     # without asking; Settings > Lyrics and artists switches them off.
     "band_logos": True,
@@ -359,7 +362,9 @@ SETTINGS_DEFAULTS = {
     # static; one that fails is swapped for the next (Player.FillerPlayer).
     "ad_filler_kind": "any",
     "ad_filler_url": "",
-    "shuffle": False,
+    # On since build 181 (task 232, the user's choice) for new profiles;
+    # load_settings keeps an older settings file without the key off.
+    "shuffle": True,
     "noise_between_stations": True,
     # Stations play at the main volume (80 by default) while the static
     # sat at 35, so it was ~7 dB down on top of the recordings being
@@ -405,11 +410,6 @@ SETTINGS_DEFAULTS = {
     # to 6s. A saved settings file would otherwise keep the old value
     # forever, since the default only applies to keys it doesn't have.
     "stall_timeout_lowered": False,
-
-    # How often shuffle should land on one of your own local stations
-    # rather than a stream, as a percentage. 0 leaves selection purely
-    # proportional to how many of each you have.
-    "local_station_ratio": 0,
 
     # Sleep timer. `sleep_minutes` is what the menu last used, so
     # starting it again doesn't mean re-picking. `sleep_fade` fades the
@@ -644,6 +644,25 @@ def load_stations():
 
 def save_stations(stations):
     _atomic_write_json(stations_path(), stations)
+    _saved()
+
+
+# Told after stations, settings or history are saved (sync.py, task 126:
+# it dates this device's edits and sends them to paired devices). Any
+# thread; a hook must return at once.
+_save_hooks = []
+
+
+def add_save_hook(hook):
+    _save_hooks.append(hook)
+
+
+def _saved():
+    for hook in list(_save_hooks):
+        try:
+            hook()
+        except Exception:                       # noqa: BLE001
+            pass
 
 
 # ----------------------------------------------------------------------
@@ -731,6 +750,18 @@ def _read_settings_file(path):
     return {}
 
 
+# Settings the app no longer has (user, 2026-11-04: "Custom station
+# frequency", `local_station_ratio`, removed on every platform). They are
+# dropped from settings.json at the next save and from restored backups.
+REMOVED_SETTINGS = ("local_station_ratio",)
+
+
+def drop_removed_settings(settings):
+    for key in REMOVED_SETTINGS:
+        settings.pop(key, None)
+    return settings
+
+
 def load_settings(remember=True):
     """The settings. remember=False for a one-off read (an export) that
     must not change what the running app believes is on disk."""
@@ -738,6 +769,11 @@ def load_settings(remember=True):
     path = settings_path()
     data = _read_settings_file(path)
     settings.update(data)
+    if data and "shuffle" not in data:
+        # Shuffle was off by default before build 181 (task 232): a
+        # profile that never saved it keeps it off.
+        settings["shuffle"] = False
+    drop_removed_settings(settings)
     # Volume used to allow up to 130; the app is capped at 100 now, so
     # clamp anything left over from an older settings file.
     try:
@@ -748,6 +784,11 @@ def load_settings(remember=True):
         with _save_lock:
             _seen.clear()
             _seen.update(_plain(settings))
+            # A removed key still on disk: seen but not in the live dict,
+            # so the next save takes it out of the file.
+            for key in REMOVED_SETTINGS:
+                if key in data:
+                    _seen[key] = _plain(data[key])
         if data:
             try:
                 _atomic_write_json(path + ".bak", data)
@@ -765,6 +806,7 @@ def save_settings(settings):
     meanwhile for every key this one hasn't changed (see _seen)."""
     with _save_lock:
         _save_merged(settings)
+    _saved()
 
 
 def _save_merged(settings):
@@ -1127,6 +1169,7 @@ def read_backup(path):
     settings = dict(SETTINGS_DEFAULTS)
     if isinstance(data.get("settings"), dict):
         settings.update(data["settings"])
+    drop_removed_settings(settings)
     try:
         settings["volume"] = max(0, min(100, int(settings.get("volume", 80))))
     except (TypeError, ValueError):
@@ -1606,6 +1649,7 @@ def load_history():
 
 def save_history(history):
     _atomic_write_json(history_path(), history)
+    _saved()
 
 
 def history_limit(settings):
@@ -1647,7 +1691,8 @@ def is_favorite(entry):
     return bool(entry.get("favorite"))
 
 
-def add_history_entry(history, track, station_name, limit=300):
+def add_history_entry(history, track, station_name, limit=300,
+                      nofav=False):
     """Prepend a hit, skipping consecutive duplicates, and trim to the
     cap. Returns (history, added?) so the caller can avoid a pointless
     disk write when nothing changed."""
@@ -1685,6 +1730,10 @@ def add_history_entry(history, track, station_name, limit=300):
         "cover_url": track.get("cover_url", ""),
         "favorite": False,
     })
+    if nofav:
+        # Where the song came from decides whether it can be starred
+        # (task 241); the history page reads this.
+        history[0]["nofav"] = True
     return trim_history(history, limit), True
 
 
@@ -2077,8 +2126,10 @@ _FEATURED_CORE = ("name", "url", "artist_lookup", "playlist_url", "kind",
                   "twitch_channel", "shows")
 
 
-def station_from_featured(entry):
+def station_from_featured(entry, art_folder=None):
     """Build a station from a featured entry, keeping its settings.
+    `art_folder`: where its picture goes (default: the config folder's
+    artwork; sync_core's shipped-defaults check uses a scratch folder).
 
     A featured station is one somebody has already tuned - tags written,
     EQ set, artwork chosen - and the point is that the work travels. So
@@ -2113,7 +2164,8 @@ def station_from_featured(entry):
     # Unpack any artwork that came with it.
     blob = raw.get("art_data")
     if blob:
-        path = _write_featured_art(station["id"], raw.get("art_name"), blob)
+        path = _write_featured_art(station["id"], raw.get("art_name"), blob,
+                                   art_folder)
         if path:
             station["custom_art_path"] = path
             # A code's artwork is a thumbnail by necessity. Marked as
@@ -2384,13 +2436,13 @@ _WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL"} | \
     {f"{kind}{n}" for kind in ("COM", "LPT") for n in range(1, 10)}
 
 
-def _write_featured_art(station_id, name, blob):
+def _write_featured_art(station_id, name, blob, folder=None):
     """Save embedded artwork and return where it landed, or ""."""
     try:
         data = base64.b64decode(blob)
     except Exception:  # noqa: BLE001
         return ""
-    folder = os.path.join(_config_dir(), "artwork")
+    folder = folder or os.path.join(_config_dir(), "artwork")
     try:
         os.makedirs(folder, exist_ok=True)
         target = os.path.join(
@@ -2414,6 +2466,19 @@ def is_youtube_station(station):
 def is_ibroadcast_station(station):
     station = station or {}
     return bool(station.get("ibroadcast_urls")) or station.get("kind") == "ibroadcast"
+
+
+NO_FAVORITE_TIP = "Only songs from radio stations can be favorited"
+
+
+def can_favorite_station(station):
+    """Songs from a music-folder station or from iBroadcast can't be
+    starred (task 241); everything else can. No station = nothing to say
+    no to."""
+    if not station:
+        return True
+    return not (is_local_station(station) or is_ibroadcast_station(station)
+                or station.get("local_path"))
 
 
 def skipped_when_down(station):

@@ -681,14 +681,14 @@ def build_info(path):
 def heads_up(manifest, build):
     """". Heads up: …" naming every OS in latest.json that is behind
     `build` (task 184), or "". Linux and Windows count even when they
-    have nothing published yet; Android once it has an entry."""
+    have nothing published yet; Android is left out (F-Droid lags)."""
     behind = []
     for name in OS_NAMES:
         if name == OS:
             continue
         entry = manifest.get(name)
-        if not isinstance(entry, dict) and name == "android":
-            continue
+        if name == "android":
+            continue  # F-Droid lags behind on purpose (task 217)
         have = int((entry or {}).get("build") or 0)
         if have < build:
             behind.append(f"{OS_NAMES[name]} on {have or 'nothing yet'}")

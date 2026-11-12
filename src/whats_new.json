@@ -1,4 +1,56 @@
 {
+  "204": [
+    "Stations that take a few seconds to start, like the ones on StreamTheWorld, are no longer marked as down by the station check while they play fine. The check now waits as long as the player does and tries once more before calling a station down."
+  ],
+  "202": [
+    "The station check at launch now runs again once the internet is back if Frequencies started offline, and the station health log shows each time it ran."
+  ],
+  "200": [
+    "Songs from a music folder or iBroadcast can no longer be starred as favorites; the star is grayed out for them.",
+    "On YouTube stations, the picture, song, artist, lyrics and artist bio now follow the next video right away.",
+    "The sync icon only turns while a device that answered is syncing. If a device isn't running Frequencies, Sync now says so."
+  ],
+  "181": [
+    "Shuffle is now on by default for new installs. If you already use Frequencies, your shuffle setting stays as it is."
+  ],
+  "178": [
+    "Station pictures now reach your phone with a big library: syncing no longer gets stuck when the computer and the phone both send their lists at once."
+  ],
+  "177": [
+    "Station pictures now finish syncing to your phone, even with a big library, and the phone's sync spinner stops when they're done."
+  ],
+  "174": [
+    "New installs now start with six more YouTube stations: AUX AUTHORITY, SYNTH HAPPENS, NOISE COMPLAINT, FRONT ROW, CONTEXT CUT and COLLISION COURSE."
+  ],
+  "171": [
+    "Station pictures now arrive when you turn them back on in Frequensync, and New Age Radio and Dare-FM no longer show up twice after syncing with your phone.",
+    "Featured frequency cards no longer show where a station streams from."
+  ],
+  "169": [
+    "Frequensync: choose what to sync with each device (frequencies, pictures, settings by group, favorites, History). It asks before the first sync and when you press Sync now, and Settings has a “Choose what to sync…” button.",
+    "Pairing a brand-new device no longer replaces your settings and station changes with its defaults."
+  ],
+  "167": [
+    "Sync now: a button in Settings > Sync with another device syncs at once, and a spinning icon shows while a sync runs.",
+    "Choose how often devices sync (every 30 minutes and at launch unless you change it). Station pictures of any size, and the 10-band equalizer switch, now sync too."
+  ],
+  "165": [
+    "Syncing with another device the first time no longer loses play counts or tags on stations you both had."
+  ],
+  "160": [
+    "Sync with another device: pair your computers once in Settings > Library and tools, and your frequencies, tags, stars, History and look stay the same on each whenever they're open on the same network."
+  ],
+  "159": [
+    "Stations on older SHOUTcast servers, including most Radio Caprice channels, play again on Windows and Linux, and song identification can listen to them.",
+    "The station check no longer marks those stations as down."
+  ],
+  "158": [
+    "Clippy's station art tip now shows only once, and goes away for good when you close it or use Find.",
+    "Bios no longer show leftover footnote marks like [2]."
+  ],
+  "153": [
+    "Small fixes to how reports are sent."
+  ],
   "152": [
     "A thumbs down is no longer lost if you open another station right after. The report is saved, sent in the background, and tried again later if you're offline."
   ],

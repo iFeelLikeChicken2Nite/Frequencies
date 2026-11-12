@@ -36,8 +36,9 @@ def _written(station, *keys):
 
 
 def _stream_info(station):
-    """What is known about the stream: format, bitrate and where it's from."""
-    from urllib.parse import urlparse
+    """What is known about the stream: format and bitrate. Never where it
+    streams from (task 228, the user: "i do not want to see where the
+    station streams from on the featured cards")."""
     feat = station.get("_featured")
     feat = feat if isinstance(feat, dict) else {}
     codec = (feat.get("codec") or station.get("codec") or "").strip()
@@ -45,10 +46,8 @@ def _stream_info(station):
         bitrate = int(feat.get("bitrate") or station.get("bitrate") or 0)
     except (TypeError, ValueError):
         bitrate = 0
-    host = urlparse(station.get("url") or feat.get("url") or "").hostname
     parts = [codec.upper() if codec else "",
-             f"{bitrate} kbps" if bitrate > 0 else "",
-             f"Streams from {host}" if host else ""]
+             f"{bitrate} kbps" if bitrate > 0 else ""]
     return " · ".join(p for p in parts if p)
 
 
