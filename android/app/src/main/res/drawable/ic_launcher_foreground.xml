@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The desktop icon's waves, drawn as a vector so it stays sharp and can be themed. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M46.34,47.57 A10,10 0 0,0 46.34,60.43 M61.66,47.57 A10,10 0 0,1 61.66,60.43 M40.98,43.07 A17,17 0 0,0 40.98,64.93 M67.02,43.07 A17,17 0 0,1 67.02,64.93 M35.62,38.57 A24,24 0 0,0 35.62,69.43 M72.38,38.57 A24,24 0 0,1 72.38,69.43"
+        android:strokeWidth="3.6"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,54 m-4.2,0 a4.2,4.2 0 1,0 8.4,0 a4.2,4.2 0 1,0 -8.4,0" />
+</vector>
