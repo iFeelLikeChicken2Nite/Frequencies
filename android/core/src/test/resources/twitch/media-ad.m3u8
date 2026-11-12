@@ -1,0 +1,14 @@
+#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:6
+#EXT-X-MEDIA-SEQUENCE:1200
+#EXT-X-TWITCH-LIVE-SEQUENCE:1250
+#EXT-X-DATERANGE:ID="stitched-ad-1800000000-30",CLASS="twitch-stitched-ad",START-DATE="2027-01-15T08:00:00.000Z",DURATION=30.0,X-TV-TWITCH-AD-POD-LENGTH="1",X-TV-TWITCH-AD-POD-POSITION="0"
+#EXT-X-PROGRAM-DATE-TIME:2027-01-15T08:00:00.000Z
+#EXTINF:2.000,Amazon|123456
+https://video-edge.example.ttvnw.net/v1/segment/ad1.ts
+#EXTINF:2.000,Amazon|123456
+https://video-edge.example.ttvnw.net/v1/segment/ad2.ts
+#EXT-X-DISCONTINUITY
+#EXTINF:2.000,live
+https://video-edge.example.ttvnw.net/v1/segment/live1.ts

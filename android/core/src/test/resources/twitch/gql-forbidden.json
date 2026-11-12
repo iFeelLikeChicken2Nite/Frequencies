@@ -1,0 +1,1 @@
+[{"data":{"streamPlaybackAccessToken":{"value":"{}","signature":"abc","authorization":{"isForbidden":true,"forbiddenReasonCode":"GEOBLOCK"},"__typename":"PlaybackAccessToken"}}}]

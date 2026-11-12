@@ -1,0 +1,21 @@
+pairing
+  client private key   0xC1 (secp256r1)
+  server private key   0x5E (secp256r1)
+  client point          0484ca3a785aba0643c465bc70a3022832703d9318ddd9413b7c96108d1bf8054ccdef3a6f1c28f8419f19c2f99e1c4515af47a2692e65d9ca1b5d9db100caebab
+  server point          0480d1997ebdbe8e54e05596196c7a95ec3a53e267ba2a24719960aa577e6150e4f39694fdb824f9a7a4d8d7b5f3e9adb3feee1673b5b9a75a5446c71882a87d12
+  code                  ABCDE12345
+  client id / server id 11111111111111111111111111111111 22222222222222222222222222222222
+  z (ECDH)              bc5efaa96cfa5d8b8c421e1a98077ee93c7d711799a073547a8e2716d2a93089
+  confirm_key           17b0271446b3a31fd3873ffa62dbb882242369334687e07792b2387d652def20
+  pair key              79c35b0f9ce4a2206da12421e7bb12ea074e0ec4f2e38cb7ef59a59469f12751
+  client mac (b64)      fFXBhEnOVYH+TfQ3Lx04fcjN78ylpxdPgDzDMVIMdBQ=
+  server mac (b64)      mhumdgnT/DfZrOVj0wiDzW9XGQhNOYCKmaGw07oMfFU=
+session (pair key above)
+  client nonce          000102030405060708090a0b0c0d0e0f
+  server nonce          101112131415161718191a1b1c1d1e1f
+  k_cs                  2e76a1c07ba945d9856390bbdce99070be4ec6424d88a36bce53324a23eae7ef
+  k_sc                  6ccea21785e354fda4045cca16e74560e0b275be483476d5950db0e0fdff99b1
+  frame 0 client->server, plaintext {"t":"ping"}:
+     11283519b11fd8947e74ad8028b345a4032d3230b2955eef9d2eba3a
+  frame 1 client->server, plaintext {"t":"ping"}:
+     866069c3d92c1afe8ff9ee584afd7fe5e717b5a1cf675c9562f71ff4

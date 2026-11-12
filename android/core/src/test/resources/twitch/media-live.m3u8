@@ -1,0 +1,9 @@
+#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:6
+#EXT-X-MEDIA-SEQUENCE:1300
+#EXT-X-PROGRAM-DATE-TIME:2027-01-15T08:05:00.000Z
+#EXTINF:2.000,live
+https://video-edge.example.ttvnw.net/v1/segment/live2.ts
+#EXTINF:2.000,live
+https://video-edge.example.ttvnw.net/v1/segment/live3.ts
