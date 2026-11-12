@@ -35,8 +35,6 @@ with `storeFile`, `storePassword`, `keyAlias`, `keyPassword` in that file.
     adb install --user 0 -r app\build\outputs\apk\dev\release\app-dev-release.apk
     adb install --user 10 -r app\build\outputs\apk\user\release\app-user-release.apk
 
-(GrapheneOS: the user build goes on the "Casual" profile, user 10, which must be running.)
-
 Variants, like the desktop's `--dev`: `dev` (id `com.frequencies.app.dev`, named
 "Frequencies Dev", shows the Developer settings, installs beside the user build),
 `user` (`com.frequencies.app`, signed with your key, for your own phones) and
