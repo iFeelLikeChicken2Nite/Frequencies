@@ -16,21 +16,21 @@ Native Kotlin + Jetpack Compose + Material 3 + Media3. Plan and batch order:
 so `./gradlew test` runs the `core` and `songid` tests in the cloud sandbox,
 which can't reach Google's Maven.
 
-## Build (Snoretana)
+## Build (Windows)
 
-Tools: JDK 21 in `C:\Users\edena\Android\jdk-21`, SDK in `C:\Users\edena\Android\Sdk`.
-Project: `C:\Users\edena\frequencies-android`. `local.properties`:
+Tools: JDK 21 in `C:\Users\YOU\Android\jdk-21`, SDK in `C:\Users\YOU\Android\Sdk`.
+Project: `C:\Users\YOU\frequencies-android`. `local.properties`:
 
-    sdk.dir=C\:\\Users\\edena\\Android\\Sdk
+    sdk.dir=C\:\\Users\\YOU\\Android\\Sdk
 
-Release signing: the key and its passwords live in `C:\Users\edena\Android\keys\`
-(never in the project, a zip or a chat). `C:\Users\edena\.gradle\gradle.properties` says where:
+Release signing: the key and its passwords live in `C:\Users\YOU\Android\keys\`
+(never in the project, a zip or a chat). `C:\Users\YOU\.gradle\gradle.properties` says where:
 
-    frequencies.signing=C:\\Users\\edena\\Android\\keys\\signing.properties
+    frequencies.signing=C:\\Users\\YOU\\Android\\keys\\signing.properties
 
 with `storeFile`, `storePassword`, `keyAlias`, `keyPassword` in that file.
 
-    set JAVA_HOME=C:\Users\edena\Android\jdk-21
+    set JAVA_HOME=C:\Users\YOU\Android\jdk-21
     gradlew assembleDevRelease assembleUserRelease
     adb install --user 0 -r app\build\outputs\apk\dev\release\app-dev-release.apk
     adb install --user 10 -r app\build\outputs\apk\user\release\app-user-release.apk
@@ -58,7 +58,7 @@ are in `fdroid/SUBMITTING.md`. Each release: bump `frequencies.build`, add
 
 To check what F-Droid will make, from a clean clone and without local.properties:
 
-    set ANDROID_HOME=C:\Users\edena\Android\Sdk
+    set ANDROID_HOME=C:\Users\YOU\Android\Sdk
     gradlew test assembleFdroidRelease
 
 The build number is `frequencies.build` in `gradle.properties`: the project's one
@@ -199,7 +199,7 @@ Desktop Head Unit test (phone plugged in, Android Auto's developer settings
 on with Unknown sources, and "Start head unit server" chosen in its menu):
 
     adb forward tcp:5277 tcp:5277
-    C:\Users\edena\Android\Sdk\extras\google\auto\desktop-head-unit.exe
+    C:\Users\YOU\Android\Sdk\extras\google\auto\desktop-head-unit.exe
 
 ## Artist info, photos and thumbs down
 
