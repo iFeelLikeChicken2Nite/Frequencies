@@ -6,7 +6,7 @@ ___________________________________
 # Install Appimage version 204 for [Linux 🐧](https://github.com/iFeelLikeChicken2Nite/frequencies-releases/releases/download/build-204/Frequencies-x86_64.AppImage)
 # Install GitHub release of version 207 for [Android 🤖](https://github.com/iFeelLikeChicken2Nite/frequencies-android-releases/releases/download/1.5.207/Frequencies-1.5.207.apk) <sub><sub>(F-droid is where I'm planning to host - feel free to make a backup before deleting your GitHub release if you want to use the F-droid release when that happens)</sub></sub>
 # There is also an experimental [fork for macOS 🍎 (It works with Rosetta, so it should support Intel and Silicon!)](https://github.com/DougM69/Frequencies/tree/macos-support)
-## Download and import the [Pebble watchapp](https://github.com/iFeelLikeChicken2Nite/frequencies-android-pebblewatchapp/releases/download/1.0.16/frequencies-pebble-1.0.16.pbw)
+## Download and import the [Pebble watchapp ⌚](https://github.com/iFeelLikeChicken2Nite/frequencies-android-pebblewatchapp/releases/download/1.0.16/frequencies-pebble-1.0.16.pbw)
 
 <img width="1467" height="1002" alt="Screenshot_20261018_182004" src="https://github.com/user-attachments/assets/7e057a12-ba5b-4a46-96ea-c40dfbf6b15e" />
 
