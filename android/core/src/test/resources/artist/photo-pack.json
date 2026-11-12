@@ -1,0 +1,16 @@
+{
+  "artists": 3,
+  "encoding": "base32x2",
+  "file": "frequencies-photo-pack.b32",
+  "format": 1,
+  "made": "2026-10-29",
+  "names": [
+    "barenaked ladies",
+    "beyoncé",
+    "eminem"
+  ],
+  "photos": 3,
+  "sha256": "ed3a29baf1a2af3fceae284b852f51756c6a45227a35ebb4b3b7520011bb0ce3",
+  "size": 4960,
+  "talk_photos": 1
+}

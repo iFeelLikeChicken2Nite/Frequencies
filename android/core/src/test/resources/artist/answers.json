@@ -1,0 +1,543 @@
+{
+  "find_artist": {
+    "Eminem": [
+      "eminem",
+      ""
+    ],
+    "EMINEM": [
+      "eminem",
+      ""
+    ],
+    "Eminem feat. Dido": [
+      "eminem",
+      "without the featured artists"
+    ],
+    "Eminem & Rihanna": [
+      "eminem",
+      "first artist named"
+    ],
+    "Eminem (with Ed Sheeran)": [
+      "eminem",
+      "without the featured artists"
+    ],
+    "The Barenaked Ladies": [
+      "barenaked ladies",
+      "spelled differently"
+    ],
+    "Barenaked Ladies x Someone": [
+      "barenaked ladies",
+      "first artist named"
+    ],
+    "Beyonce": [
+      "beyoncé",
+      "spelled differently"
+    ],
+    "Beyoncé, Jay-Z": [
+      "beyoncé",
+      "first artist named"
+    ],
+    "AC/DC": [
+      "",
+      ""
+    ],
+    "Nobody Here": [
+      "",
+      ""
+    ],
+    "dracula": [
+      "dracula",
+      ""
+    ],
+    "  Dracula  ": [
+      "dracula",
+      ""
+    ],
+    "Eminem ft Dido": [
+      "eminem",
+      "without the featured artists"
+    ],
+    "Eminem vs. Moby": [
+      "eminem",
+      "first artist named"
+    ],
+    "Simon and Garfunkel": [
+      "simon & garfunkel",
+      "spelled differently"
+    ],
+    "Earth, Wind & Fire": [
+      "earth wind and fire",
+      "spelled differently"
+    ],
+    "Björk feat. Ólafur Arnalds": [
+      "",
+      ""
+    ],
+    "Sigur Rós": [
+      "",
+      ""
+    ],
+    "Röyksopp & Robyn": [
+      "",
+      ""
+    ],
+    "Andréx Bob": [
+      "",
+      ""
+    ],
+    "Joséand Maria": [
+      "",
+      ""
+    ],
+    "Zé x Ana": [
+      "",
+      ""
+    ],
+    "Ólafur Arnalds and Nils Frahm": [
+      "",
+      ""
+    ],
+    "Mötley Crüe vs. Ratt": [
+      "",
+      ""
+    ],
+    "坂本龍一 feat. David Sylvian": [
+      "",
+      ""
+    ],
+    "Café Tacvba (featuring Ely Guerra)": [
+      "",
+      ""
+    ],
+    "Ñu x Ébano": [
+      "",
+      ""
+    ],
+    "Ärzte – Live!": [
+      "",
+      ""
+    ]
+  },
+  "artist_keys": {
+    "Eminem": [
+      [
+        "eminem",
+        ""
+      ]
+    ],
+    "EMINEM": [
+      [
+        "eminem",
+        ""
+      ]
+    ],
+    "Eminem feat. Dido": [
+      [
+        "eminem feat. dido",
+        ""
+      ],
+      [
+        "eminem",
+        "without the featured artists"
+      ]
+    ],
+    "Eminem & Rihanna": [
+      [
+        "eminem & rihanna",
+        ""
+      ],
+      [
+        "eminem",
+        "first artist named"
+      ]
+    ],
+    "Eminem (with Ed Sheeran)": [
+      [
+        "eminem (with ed sheeran)",
+        ""
+      ],
+      [
+        "eminem",
+        "without the featured artists"
+      ]
+    ],
+    "The Barenaked Ladies": [
+      [
+        "the barenaked ladies",
+        ""
+      ]
+    ],
+    "Barenaked Ladies x Someone": [
+      [
+        "barenaked ladies x someone",
+        ""
+      ],
+      [
+        "barenaked ladies",
+        "first artist named"
+      ]
+    ],
+    "Beyonce": [
+      [
+        "beyonce",
+        ""
+      ]
+    ],
+    "Beyoncé, Jay-Z": [
+      [
+        "beyoncé, jay-z",
+        ""
+      ],
+      [
+        "beyoncé",
+        "first artist named"
+      ]
+    ],
+    "AC/DC": [
+      [
+        "ac/dc",
+        ""
+      ],
+      [
+        "ac",
+        "first artist named"
+      ]
+    ],
+    "Nobody Here": [
+      [
+        "nobody here",
+        ""
+      ]
+    ],
+    "dracula": [
+      [
+        "dracula",
+        ""
+      ]
+    ],
+    "  Dracula  ": [
+      [
+        "dracula",
+        ""
+      ]
+    ],
+    "Eminem ft Dido": [
+      [
+        "eminem ft dido",
+        ""
+      ],
+      [
+        "eminem",
+        "without the featured artists"
+      ]
+    ],
+    "Eminem vs. Moby": [
+      [
+        "eminem vs. moby",
+        ""
+      ],
+      [
+        "eminem",
+        "first artist named"
+      ]
+    ],
+    "Simon and Garfunkel": [
+      [
+        "simon and garfunkel",
+        ""
+      ],
+      [
+        "simon",
+        "first artist named"
+      ]
+    ],
+    "Earth, Wind & Fire": [
+      [
+        "earth, wind & fire",
+        ""
+      ],
+      [
+        "earth",
+        "first artist named"
+      ]
+    ],
+    "Björk feat. Ólafur Arnalds": [
+      [
+        "björk feat. ólafur arnalds",
+        ""
+      ],
+      [
+        "björk",
+        "without the featured artists"
+      ]
+    ],
+    "Sigur Rós": [
+      [
+        "sigur rós",
+        ""
+      ]
+    ],
+    "Röyksopp & Robyn": [
+      [
+        "röyksopp & robyn",
+        ""
+      ],
+      [
+        "röyksopp",
+        "first artist named"
+      ]
+    ],
+    "Andréx Bob": [
+      [
+        "andréx bob",
+        ""
+      ]
+    ],
+    "Joséand Maria": [
+      [
+        "joséand maria",
+        ""
+      ]
+    ],
+    "Zé x Ana": [
+      [
+        "zé x ana",
+        ""
+      ],
+      [
+        "zé",
+        "first artist named"
+      ]
+    ],
+    "Ólafur Arnalds and Nils Frahm": [
+      [
+        "ólafur arnalds and nils frahm",
+        ""
+      ],
+      [
+        "ólafur arnalds",
+        "first artist named"
+      ]
+    ],
+    "Mötley Crüe vs. Ratt": [
+      [
+        "mötley crüe vs. ratt",
+        ""
+      ],
+      [
+        "mötley crüe",
+        "first artist named"
+      ]
+    ],
+    "坂本龍一 feat. David Sylvian": [
+      [
+        "坂本龍一 feat. david sylvian",
+        ""
+      ],
+      [
+        "坂本龍一",
+        "without the featured artists"
+      ]
+    ],
+    "Café Tacvba (featuring Ely Guerra)": [
+      [
+        "café tacvba (featuring ely guerra)",
+        ""
+      ],
+      [
+        "café tacvba",
+        "without the featured artists"
+      ]
+    ],
+    "Ñu x Ébano": [
+      [
+        "ñu x ébano",
+        ""
+      ],
+      [
+        "ñu",
+        "first artist named"
+      ]
+    ],
+    "Ärzte – Live!": [
+      [
+        "ärzte – live!",
+        ""
+      ]
+    ]
+  },
+  "loose": {
+    "Eminem": "eminem",
+    "EMINEM": "eminem",
+    "Eminem feat. Dido": "eminem feat dido",
+    "Eminem & Rihanna": "eminem and rihanna",
+    "Eminem (with Ed Sheeran)": "eminem with ed sheeran",
+    "The Barenaked Ladies": "barenaked ladies",
+    "Barenaked Ladies x Someone": "barenaked ladies x someone",
+    "Beyonce": "beyonce",
+    "Beyoncé, Jay-Z": "beyonce jayz",
+    "AC/DC": "acdc",
+    "Nobody Here": "nobody here",
+    "dracula": "dracula",
+    "  Dracula  ": "dracula",
+    "Eminem ft Dido": "eminem ft dido",
+    "Eminem vs. Moby": "eminem vs moby",
+    "Simon and Garfunkel": "simon and garfunkel",
+    "Earth, Wind & Fire": "earth wind and fire",
+    "Björk feat. Ólafur Arnalds": "bjork feat olafur arnalds",
+    "Sigur Rós": "sigur ros",
+    "Röyksopp & Robyn": "royksopp and robyn",
+    "Andréx Bob": "andrex bob",
+    "Joséand Maria": "joseand maria",
+    "Zé x Ana": "ze x ana",
+    "Ólafur Arnalds and Nils Frahm": "olafur arnalds and nils frahm",
+    "Mötley Crüe vs. Ratt": "motley crue vs ratt",
+    "坂本龍一 feat. David Sylvian": "坂本龍一 feat david sylvian",
+    "Café Tacvba (featuring Ely Guerra)": "cafe tacvba featuring ely guerra",
+    "Ñu x Ébano": "nu x ebano",
+    "Ärzte – Live!": "arzte live"
+  },
+  "table": [
+    "barenaked ladies",
+    "beyoncé",
+    "dracula",
+    "earth wind and fire",
+    "eminem",
+    "simon & garfunkel"
+  ],
+  "norm_stream": {
+    "https://KBEM-live.streamguys1.com/kbem_mp3;": "kbem-live.streamguys1.com/kbem_mp3",
+    "http://a.b/c/": "a.b/c",
+    "a.B/": "a.b",
+    "": "",
+    "HTTP://X.Y/Path/To;/": "x.y/Path/To"
+  },
+  "talk_entries": {
+    "jazz 88.5 kbem": {
+      "talk": true,
+      "stream": "https://kbem-live.streamguys1.com/kbem_mp3;",
+      "photo": "talk_photos/kbem.jpg"
+    },
+    "npr news": {
+      "talk": true
+    },
+    "plain correction": {
+      "bio": "Typed in."
+    }
+  },
+  "talk_entry": [
+    [
+      {
+        "name": "Anything",
+        "url": "http://KBEM-LIVE.streamguys1.com/kbem_mp3/"
+      },
+      [
+        "jazz 88.5 kbem",
+        {
+          "talk": true,
+          "stream": "https://kbem-live.streamguys1.com/kbem_mp3;",
+          "photo": "talk_photos/kbem.jpg"
+        },
+        "stream address"
+      ]
+    ],
+    [
+      {
+        "name": "NPR News",
+        "url": "http://other/"
+      },
+      [
+        "npr news",
+        {
+          "talk": true
+        },
+        "name"
+      ]
+    ],
+    [
+      {
+        "name": "x",
+        "custom_name": "npr news",
+        "url": "http://other2/"
+      },
+      [
+        "npr news",
+        {
+          "talk": true
+        },
+        "name"
+      ]
+    ],
+    [
+      {
+        "name": "Nope",
+        "url": "http://nope/"
+      },
+      [
+        "",
+        null,
+        ""
+      ]
+    ]
+  ],
+  "format_span": {
+    "1979-02-15": "February 1979",
+    "1979": "1979",
+    "1979-13": "1979",
+    "79": "79",
+    "": "",
+    "2001-07": "July 2001"
+  },
+  "looks_musical": [
+    [
+      "male ruler",
+      "Prince is a title.",
+      false
+    ],
+    [
+      "American musician (1958-2016)",
+      "",
+      true
+    ],
+    [
+      "",
+      "Muse are an English rock band.",
+      true
+    ],
+    [
+      "river in Europe",
+      "A river.",
+      false
+    ],
+    [
+      "",
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx band",
+      false
+    ]
+  ],
+  "issues": [
+    {
+      "what": "bio",
+      "title": "Wrong artist info (bio): Dracula",
+      "body": "Artist: Dracula\nWhat is wrong: Bio\nBio from: Biography from Wikipedia\nWrong info (first 200 characters):\n> BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\n(2026-10-29 12:00)",
+      "address": "https://github.com/someone/frequencies-reports/issues/new?title=Wrong%20artist%20info%20%28bio%29%3A%20Dracula&body=Artist%3A%20Dracula%0AWhat%20is%20wrong%3A%20Bio%0ABio%20from%3A%20Biography%20from%20Wikipedia%0AWrong%20info%20%28first%20200%20characters%29%3A%0A%3E%20BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB%0A%282026-10-29%2012%3A00%29"
+    },
+    {
+      "what": "photo",
+      "title": "Wrong artist info (photo): Dracula",
+      "body": "Artist: Dracula\nWhat is wrong: Photo\nPhoto shown: photo pack, photos/dracula.jpg\n(2026-10-29 12:00)",
+      "address": "https://github.com/someone/frequencies-reports/issues/new?title=Wrong%20artist%20info%20%28photo%29%3A%20Dracula&body=Artist%3A%20Dracula%0AWhat%20is%20wrong%3A%20Photo%0APhoto%20shown%3A%20photo%20pack%2C%20photos%2Fdracula.jpg%0A%282026-10-29%2012%3A00%29"
+    },
+    {
+      "what": "both",
+      "title": "Wrong artist info (bio and photo): Dracula",
+      "body": "Artist: Dracula\nWhat is wrong: Bio and photo\nBio from: Biography from Wikipedia\nWrong info (first 200 characters):\n> BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\nPhoto shown: photo pack, photos/dracula.jpg\n(2026-10-29 12:00)",
+      "address": "https://github.com/someone/frequencies-reports/issues/new?title=Wrong%20artist%20info%20%28bio%20and%20photo%29%3A%20Dracula&body=Artist%3A%20Dracula%0AWhat%20is%20wrong%3A%20Bio%20and%20photo%0ABio%20from%3A%20Biography%20from%20Wikipedia%0AWrong%20info%20%28first%20200%20characters%29%3A%0A%3E%20BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB%0APhoto%20shown%3A%20photo%20pack%2C%20photos%2Fdracula.jpg%0A%282026-10-29%2012%3A00%29"
+    },
+    {
+      "what": "nonsense",
+      "title": "Wrong artist info (bio and photo): Dracula",
+      "body": "Artist: Dracula\nWhat is wrong: Bio and photo\nBio from: Biography from Wikipedia\nWrong info (first 200 characters):\n> BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\nPhoto shown: photo pack, photos/dracula.jpg\n(2026-10-29 12:00)",
+      "address": "https://github.com/someone/frequencies-reports/issues/new?title=Wrong%20artist%20info%20%28bio%20and%20photo%29%3A%20Dracula&body=Artist%3A%20Dracula%0AWhat%20is%20wrong%3A%20Bio%20and%20photo%0ABio%20from%3A%20Biography%20from%20Wikipedia%0AWrong%20info%20%28first%20200%20characters%29%3A%0A%3E%20BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB%0APhoto%20shown%3A%20photo%20pack%2C%20photos%2Fdracula.jpg%0A%282026-10-29%2012%3A00%29"
+    }
+  ]
+}

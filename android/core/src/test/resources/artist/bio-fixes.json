@@ -1,0 +1,17 @@
+{
+  "artists": {
+    "barenaked ladies": {
+      "bio": "A Canadian band."
+    },
+    "beyoncé": {
+      "name": "Beyoncé"
+    },
+    "dracula": {
+      "genres": "rock",
+      "wikipedia": "Dracula (band)"
+    }
+  },
+  "format": 1,
+  "made": "2026-10-29",
+  "sha256": "a7258f12e7ff4a4796f790002cab6062676a18438df313e99d2e87630c0faab3"
+}
