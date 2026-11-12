@@ -1,5 +1,5 @@
 # Frequencies
-## A modern, stylish internet radio player for Linux and Windows. Simple, yet powerful. Decline the algorithm, and rediscover radio.
+## A modern, stylish internet radio player for Linux, macOS, Android, and Windows. Simple, yet powerful. Decline the algorithm, and rediscover radio.
 ___________________________________
 
 # Install version 153 for [Windows 🪟](https://github.com/iFeelLikeChicken2Nite/frequencies-releases/releases/download/build-153/Frequencies-Setup.exe) 
