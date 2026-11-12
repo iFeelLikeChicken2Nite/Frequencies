@@ -57,11 +57,11 @@ This lets you just get going, and enjoy what you're hearing without burdening yo
 
 <img width="1500" height="1002" alt="Screenshot_20261018_182744" src="https://github.com/user-attachments/assets/ef244294-e423-4ffa-a48c-7eab5a50fce9" />
 
-<img width="198" alt="1" src="https://github.com/user-attachments/assets/7c87fba1-f80f-4956-b89f-4419b8b44e04" />
-<img width="198" alt="2" src="https://github.com/user-attachments/assets/ffc364ee-356a-4c0f-9c8d-806f8741781d" />
-<img width="198" alt="3" src="https://github.com/user-attachments/assets/40004d9b-1db1-4b08-96df-977b6af9ff04" />
-<img width="198" alt="4" src="https://github.com/user-attachments/assets/5cee2cf9-5332-4dc9-a3e2-deb291b5584f" />
-<img width="198" alt="5" src="https://github.com/user-attachments/assets/0e0b552a-af5d-4b45-aca0-5eea8aa2121b" />
+<img width="190" alt="1" src="https://github.com/user-attachments/assets/7c87fba1-f80f-4956-b89f-4419b8b44e04" />
+<img width="190" alt="2" src="https://github.com/user-attachments/assets/ffc364ee-356a-4c0f-9c8d-806f8741781d" />
+<img width="190" alt="3" src="https://github.com/user-attachments/assets/40004d9b-1db1-4b08-96df-977b6af9ff04" />
+<img width="190" alt="4" src="https://github.com/user-attachments/assets/5cee2cf9-5332-4dc9-a3e2-deb291b5584f" />
+<img width="190" alt="5" src="https://github.com/user-attachments/assets/0e0b552a-af5d-4b45-aca0-5eea8aa2121b" />
 
 
 
