@@ -1,6 +1,5 @@
 # Frequencies
 ## A modern, stylish internet radio player for Linux, macOS, Android, and Windows. Simple, yet powerful. Decline the algorithm, and rediscover radio.
-___________________________________
 
 # Install version 204 for [Windows 🪟](https://github.com/iFeelLikeChicken2Nite/frequencies-releases/releases/download/build-204/Frequencies-Setup.exe) 
 # Install Appimage version 204 for [Linux 🐧](https://github.com/iFeelLikeChicken2Nite/frequencies-releases/releases/download/build-204/Frequencies-x86_64.AppImage)
