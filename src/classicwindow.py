@@ -550,6 +550,7 @@ class ClassicWindow(QWidget):
         self.on_vis_mode = None
         self.on_close_all = None
         self.on_favourite = None
+        self.star_allowed = None
         self.on_favourite_menu = None
         self.on_history = None
         self.on_logo = None
@@ -1562,6 +1563,9 @@ class ClassicWindow(QWidget):
         if not self._star_pressed:
             return
         self._star_pressed = False
+        if (not self.favourite and self.star_allowed is not None
+                and not self.star_allowed()):
+            return                      # task 241: not a radio-station song
         self.favourite = not self.favourite
         if self.favourite:
             self._star_glow = True

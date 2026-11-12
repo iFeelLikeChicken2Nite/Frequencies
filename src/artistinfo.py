@@ -36,6 +36,29 @@ def forget_cached_bios():
         _cache.pop(key, None)
 
 
+_CITE = re.compile(
+    r"\s*\[\s*(?:\d{1,3}|[a-z]|note\s*\d{1,3}|nb\s*\d{1,3}"
+    r"|citation needed|citation|clarification needed|dubious(?: [-–] discuss)?"
+    r"|according to whom\??|when\??|who\??|which\??|failed verification"
+    r"|original research\??|verification needed|better source needed)\s*\]",
+    re.IGNORECASE)
+
+
+def strip_citations(text):
+    """Take Wikipedia-style citation marks ([2], [citation needed], [a],
+    [note 1]) out of a biography (task 218). Other brackets, like
+    "[Untitled]" or "[1997]", stay."""
+    if not text or "[" not in text:
+        return text
+    return _CITE.sub("", text)
+
+
+def _clean_bio(info):
+    if isinstance(info, dict) and isinstance(info.get("summary"), str):
+        info = dict(info, summary=strip_citations(info["summary"]))
+    return info
+
+
 def _cached(key, produce):
     """One-shot memo with an expiry.
 
@@ -217,8 +240,8 @@ def station_article(station_name, override=None):
 
     # Keyed by the article asked for, not only the station: a Wikipedia
     # title typed into Edit this artist… must not get the old answer.
-    return _cached(("station", station_name.lower(),
-                    (override.get("wikipedia") or "").lower()), look_up)
+    return _clean_bio(_cached(("station", station_name.lower(),
+                    (override.get("wikipedia") or "").lower()), look_up))
 
 
 # Discogs, as a last resort. Their search needs a token, but the
@@ -289,7 +312,7 @@ def discogs_biography(artist):
             "source": "Discogs",
         }
 
-    return _cached(("discogs", artist.lower()), look_up)
+    return _clean_bio(_cached(("discogs", artist.lower()), look_up))
 
 
 def biography(artist, override=None):
@@ -306,7 +329,7 @@ def biography(artist, override=None):
     # The override is part of the cache key: changing a correction has
     # to take effect without waiting for the cache to expire.
     key = ("bio", artist.lower(), repr(sorted(override.items())))
-    return _cached(key, lambda: _biography(artist, override))
+    return _clean_bio(_cached(key, lambda: _biography(artist, override)))
 
 
 def _biography(artist, override=None):

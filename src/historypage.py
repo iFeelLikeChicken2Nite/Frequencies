@@ -173,6 +173,11 @@ class SongTile(QWidget):
         self.star.setChecked(bool(bool(entry.get("favorite"))))
         self.star.setGeometry(self.ART - 32, self.ART - 32, 26, 26)
         self.star.setToolTip("Favorite")
+        if entry.get("nofav") and not entry.get("favorite"):
+            # Task 241: music-folder and iBroadcast songs can't be starred.
+            self.star.setEnabled(False)
+            self.star.setToolTip("Only songs from radio stations can be "
+                                 "favorited")
         self.star.setStyleSheet(
             "QToolButton { background: rgba(10,10,12,170); border: none;"
             " border-radius: 13px; }"
@@ -311,6 +316,11 @@ class SongRow(QWidget):
         self.star.setChecked(bool(bool(entry.get("favorite"))))
         self.star.setAutoRaise(True)
         self.star.setToolTip("Favorite")
+        if entry.get("nofav") and not entry.get("favorite"):
+            # Task 241: music-folder and iBroadcast songs can't be starred.
+            self.star.setEnabled(False)
+            self.star.setToolTip("Only songs from radio stations can be "
+                                 "favorited")
         self.star.setIconSize(QSize(15, 15))
         self.star.toggled.connect(self._on_star)
         self._paint_star()

@@ -61,6 +61,9 @@ class Desktop(QObject):
                 step()
             except Exception as exc:            # noqa: BLE001
                 crashlog.write(f"[desktop] {step.__name__} failed: {exc!r}")
+                if step == self._start_launch_check:
+                    # Not only in the crash log (task 246).
+                    healthlog.sweep(f"Didn't start: {type(exc).__name__}")
 
     def reconfigure(self):
         """Options changed something that was decided at startup."""
@@ -225,9 +228,19 @@ class Desktop(QObject):
         monitor.start()
         self.monitor = monitor
 
-    def _start_launch_check(self):
+    # Minutes before a launch check that was skipped or cut short as
+    # offline tries again, if the internet hasn't come back sooner.
+    LAUNCH_RETRY_MINUTES = 5
+
+    def _start_launch_check(self, retry=False):
         """Always on, no setting (task 140): every launch probes every
-        saved stream in the background, a few seconds after start."""
+        saved stream in the background, a few seconds after start.
+
+        If it is skipped or cut short because the internet looks gone, it
+        runs once more when the internet is back (or after a few minutes),
+        at most once per launch (build 202, task 246)."""
+        if not retry:
+            self._launch_retry_used = False
         playback = getattr(getattr(self, "win", None), "playback", None)
         checkable = getattr(playback, "checkable", None)
         check_url = getattr(playback, "check_url", None)
@@ -265,14 +278,64 @@ class Desktop(QObject):
             self.win.reload()
         if not targets:
             crashlog.write("[health] launch check: no saved streams to check")
+            healthlog.sweep("Skipped: no saved internet streams to check")
             return
-        self._launch_reload = QTimer(self)
-        self._launch_reload.setSingleShot(True)
-        self._launch_reload.timeout.connect(self._launch_redraw)
-        job = workers.LaunchCheck(targets)
+        if getattr(self, "_launch_reload", None) is None:
+            self._launch_reload = QTimer(self)
+            self._launch_reload.setSingleShot(True)
+            self._launch_reload.timeout.connect(self._launch_redraw)
+        job = workers.LaunchCheck(targets, delay=2.0 if retry else 8.0)
         job.result.connect(self._launch_result)
+        job.outcome.connect(self._launch_outcome)
         job.finished.connect(self._launch_redraw)
+        self._launch_job = job
         job.start()
+
+    def _launch_outcome(self, kind, text):
+        if kind != "started":
+            crashlog.write(f"[health] launch check outcome: {kind}")
+        if kind not in ("offline", "failed"):
+            healthlog.sweep(text)
+            return
+        if getattr(self, "_launch_retry_used", True):
+            healthlog.sweep(text + ". Not trying again until the next launch")
+            return
+        self._launch_retry_used = True
+        healthlog.sweep(text + ". Trying again when the internet is back "
+                        f"(or in {self.LAUNCH_RETRY_MINUTES} minutes)")
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(self._launch_retry)
+        timer.start(int(self.LAUNCH_RETRY_MINUTES * 60 * 1000))
+        self._launch_retry_timer = timer
+        watch = getattr(getattr(self, "win", None), "_offline_watch", None)
+        if watch is not None:
+            watch.changed.connect(self._launch_net_changed)
+            self._launch_watch = watch
+
+    def _launch_net_changed(self, offline_now):
+        if not offline_now:
+            self._launch_retry()
+
+    def _launch_retry(self):
+        """The one retry: whichever comes first, internet back or timer."""
+        timer = getattr(self, "_launch_retry_timer", None)
+        if timer is None:
+            return                              # already ran
+        self._launch_retry_timer = None
+        timer.stop()
+        watch = getattr(self, "_launch_watch", None)
+        if watch is not None:
+            try:
+                watch.changed.disconnect(self._launch_net_changed)
+            except (TypeError, RuntimeError):
+                pass
+            self._launch_watch = None
+        try:
+            self._start_launch_check(retry=True)
+        except Exception as exc:                # noqa: BLE001
+            crashlog.write(f"[desktop] launch check retry failed: {exc!r}")
+            healthlog.sweep(f"Retry didn't start: {type(exc).__name__}")
 
     def _launch_result(self, station_id, ok, reason):
         station = self.lib.station_by_id(station_id) or {}

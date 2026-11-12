@@ -457,24 +457,36 @@ def looks_like_playlist(url):
     return path.endswith(".pls") or path.endswith(".m3u")
 
 
-def _first_url_in(text):
+def listed_urls(text):
+    """Every stream address a .pls / .m3u lists, in order ([] for an HLS
+    manifest, which the player plays as it is)."""
     if "#EXT-X-" in text:
         # An HLS manifest that happens to be named .m3u. Leave it alone:
         # the player understands it and the segment URLs inside are not
         # something to play directly.
-        return ""
+        return []
     fmt = sniff_format(text)
-    entries = _read_pls(text) if fmt == "pls" else _read_m3u(text)
+    try:
+        entries = _read_pls(text) if fmt == "pls" else _read_m3u(text)
+    except PlaylistError:
+        entries = []
+    urls = []
     for entry in entries:
         candidate = (entry.get("url") or "").strip()
-        if _is_url(candidate):
-            return candidate
-    # Fall back to the first bare URL on any line.
-    for line in text.splitlines():
-        line = line.strip()
-        if _is_url(line):
-            return line
-    return ""
+        if _is_url(candidate) and candidate not in urls:
+            urls.append(candidate)
+    if not urls:
+        # Fall back to the first bare URL on any line.
+        for line in text.splitlines():
+            line = line.strip()
+            if _is_url(line):
+                return [line]
+    return urls
+
+
+def _first_url_in(text):
+    urls = listed_urls(text)
+    return urls[0] if urls else ""
 
 
 def resolve_stream_url(url, timeout=8, session=None):

@@ -85,6 +85,9 @@ class Library:
         kind = station.get("kind", "stream")
         if kind == "local":
             path = station.get("local_path") or ""
+            # A folder station synced from another computer (task 126).
+            if path and not os.path.exists(path):
+                return "Local · not on this device"
             return f"Local · {os.path.basename(path.rstrip('/')) or path}"
         if kind == "youtube":
             return "YouTube playlist"
@@ -163,11 +166,39 @@ class Library:
                 # Spelled as storage spells it, so the row and the entry
                 # it came from cannot disagree.
                 "favorite": storage.is_favorite(e),
+                "nofav": self.entry_unfavoritable(e),
                 "url": e.get("apple_music_url", ""),
             })
         return out
 
+    def entry_unfavoritable(self, e):
+        """A song from a music-folder or iBroadcast station can't be
+        starred (task 241). History only keeps the station's name, so
+        older rows are matched by it; a radio station with the same name
+        wins, and an existing star is never touched."""
+        if storage.is_favorite(e):
+            return False
+        if e.get("nofav"):
+            return True
+        name = e.get("station", "")
+        same = [s for s in self.stations
+                if storage.station_display_name(s) == name]
+        return bool(same) and not any(
+            storage.can_favorite_station(s) for s in same)
+
     def set_favourite(self, key, on, track=None, station_name=""):
+        if on:
+            for e in self.history:
+                if storage.entry_key(e) == key:
+                    if self.entry_unfavoritable(e):
+                        return False
+                    break
+            else:
+                same = [s for s in self.stations
+                        if storage.station_display_name(s) == station_name]
+                if same and not any(storage.can_favorite_station(s)
+                                    for s in same):
+                    return False
         self.history, changed = storage.set_favorite(
             self.history, key, on, track=track, station_name=station_name)
         if changed:

@@ -197,6 +197,7 @@ class OptionsPage(QWidget):
             lambda: self._into("Accounts", self._build_ibroadcast, True),
             lambda: self._into("Accounts", self._end),
             lambda: self._into("Library and tools", self._build_library),
+            lambda: self._into("Library and tools", self._build_sync, True),
             lambda: self._into("Library and tools", self._build_updates,
                                True),
             lambda: self._into("Library and tools", self._build_diagnostics,
@@ -839,6 +840,12 @@ class OptionsPage(QWidget):
             lay.addWidget(_row(featured))
 
         self.lay.addWidget(box)
+
+    def _build_sync(self):
+        """Sync with another device (task 126): syncpage.py."""
+        import syncpage
+        self.sync_box = syncpage.build_section(_section, _row)
+        self.lay.addWidget(self.sync_box)
 
     def _build_updates(self):
         """Updates (build 125, task 177): checked at every launch; this is

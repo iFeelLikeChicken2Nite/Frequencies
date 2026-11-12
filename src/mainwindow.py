@@ -423,7 +423,7 @@ class FrequenciesWindow(Shell):
         # silently reverted to off on each launch.
         self.player.shuffle_btn.blockSignals(True)
         self.player.shuffle_btn.setChecked(
-            bool(self.lib.settings.get("shuffle", False)))
+            bool(self.lib.settings.get("shuffle", True)))
         self.player.shuffle_btn.blockSignals(False)
         self.player._on_shuffle(self.player.shuffle_btn.isChecked())
 
@@ -608,6 +608,8 @@ class FrequenciesWindow(Shell):
         p.volume_changed.connect(self._on_volume)
         p.shuffled.connect(self._on_shuffle)
         p.favourited.connect(self._on_favourite)
+        p.star_allowed = lambda: storage.can_favorite_station(
+            self.playback.current)
         p.fav_btn.setContextMenuPolicy(Qt.CustomContextMenu)
         p.fav_btn.customContextMenuRequested.connect(
             lambda _pos: self.sidebar._select("history"))
@@ -658,6 +660,24 @@ class FrequenciesWindow(Shell):
         # more (build 144, task 207).
         photopack.keeper(self.lib.settings).logos_changed.connect(
             self._refresh_logos)
+        # Sync with paired devices on this network (task 126): quiet
+        # until this computer is paired or showing a pairing code.
+        import sync
+        try:
+            self._sync = sync.SyncService(self)
+            QTimer.singleShot(1500, self._sync.start)
+            # The player bar's spinner while a sync runs, and a Sync now
+            # that went wrong said in the bar too (build 167, task 223).
+            badge = getattr(self.player, "sync_badge", None)
+            if badge is not None:
+                badge.watch(self._sync)
+                badge.clicked.connect(self._open_sync_settings)
+            self._sync_error_shown = ""
+            self._sync.activity.connect(self._sync_activity)
+        except Exception as exc:                # noqa: BLE001
+            self._sync = None
+            import crashlog
+            crashlog.write(f"[sync] couldn't start: {exc!r}")
         # Updates (build 125, task 177): checked at every launch, applied
         # when the app quits; a new build says so once.
         import updater
@@ -1204,6 +1224,9 @@ class FrequenciesWindow(Shell):
         # anything back. A running sign-in renewal gets up to 2 s to
         # finish; the rest are daemon threads and end with the app
         # (build 46).
+        sync_service = getattr(self, "_sync", None)
+        if sync_service is not None:
+            sync_service.stop()
         import jobs
         jobs.Job.stop_all(wait_ms=2000)
         self.shutdown_scaler()
@@ -1767,6 +1790,24 @@ class FrequenciesWindow(Shell):
         """
         self.add_ibroadcast(whole_library=True)
 
+    def _open_sync_settings(self):
+        """Settings, on Library and tools at Sync with another device."""
+        self.sidebar._select("options")
+        page = self.options_page
+        page.ensure_built()
+        target = getattr(page, "sync_box", None)
+        if target is not None:
+            QTimer.singleShot(0, lambda: page.ensureWidgetVisible(target, 0,
+                                                                  120))
+
+    def _sync_activity(self):
+        """A new problem from a sync goes in the player bar once."""
+        svc = self._sync
+        text = svc.error if svc is not None else ""
+        if text and text != self._sync_error_shown:
+            self.notify(text, transient=True)
+        self._sync_error_shown = text
+
     def _open_ibroadcast_settings(self):
         """Settings, on the Accounts tab at the iBroadcast section."""
         self.sidebar._select("options")
@@ -2274,7 +2315,7 @@ class FrequenciesWindow(Shell):
         self._find_full_art([station])
         self._added_message(
             f"Added {storage.station_display_name(station)} to your stations.")
-        # Tip 14 (task 173) every time, asked first so tips 2 and 12,
+        # Tip 14 (tasks 173, 219: once ever), asked first so tips 2 and 12,
         # the newer asks, show before it.
         self._clippy_art_id = station.get("id")
         self.companion.tip("art")
@@ -2774,6 +2815,16 @@ class FrequenciesWindow(Shell):
             pass
         if title:
             artist, song = storage.clean_video_title(title)
+            changed = (song, artist) != getattr(self, "_song", None)
+            if changed:
+                # The next video is a new song, starting at its top
+                # (task 244): the star, the lyric clock, the picture, the
+                # lyrics and the artist all follow it at once instead of
+                # waiting for a song check to catch up.
+                self._song_started = time.monotonic()
+                self._song_offset = 0.0
+                self._lyric_nudge = 0.0
+                self._show_star_for(song, artist)
             self._song = (song, artist)
             self.brat.song(artist, song, None, "title")     # task 48
             # The video title is the identified song here, and the
@@ -2783,7 +2834,13 @@ class FrequenciesWindow(Shell):
             self.player.set_now_playing(
                 wanted[0], wanted[1], storage.station_display_name(station))
             self.panel.set_track(song, artist)
-        if thumbnail and self.feeds is not None:
+        if self.feeds is not None and title:
+            try:
+                self.feeds.want_artwork(artist, song, "", thumbnail or "")
+            except Exception:                   # noqa: BLE001
+                if thumbnail:
+                    self.feeds.fetch_artwork(thumbnail)
+        elif thumbnail and self.feeds is not None:
             self.feeds.fetch_artwork(thumbnail)
 
     def _after_skip(self):
@@ -2935,6 +2992,13 @@ class FrequenciesWindow(Shell):
     def _on_favourite(self, on):
         """The star favorites the song, never the station."""
         if not self._song:
+            return
+        if on and not storage.can_favorite_station(self.playback.current):
+            # Task 241: music-folder and iBroadcast songs can't be starred.
+            self.player.fav_btn.blockSignals(True)
+            self.player.fav_btn.setChecked(False)
+            self.player.fav_btn.blockSignals(False)
+            self.player._on_fav(False)
             return
         title, artist = self._song
         key = storage.track_key(artist, title)
@@ -3412,13 +3476,16 @@ class FrequenciesWindow(Shell):
                     on_saved=self.lib.save_settings))
         menu.addSeparator()
         starred = bool(storage.is_favorite(entry))
-        menu.addAction("Unfavorite" if starred else "Favorite",
+        fav_act = menu.addAction("Unfavorite" if starred else "Favorite",
                        lambda: (self.lib.set_favourite(
                            storage.entry_key(entry), not starred,
                            track={"title": entry.get("title", ""),
                                   "artist": entry.get("artist", "")},
                            station_name=entry.get("station", "")),
                            self.refresh_history()))
+        if not starred and self.lib.entry_unfavoritable(entry):
+            fav_act.setEnabled(False)
+            fav_act.setToolTip(storage.NO_FAVORITE_TIP)
         open_menu(menu, pos)
 
     @staticmethod
@@ -4830,6 +4897,7 @@ class FrequenciesWindow(Shell):
 
         self.player.shazam_pulse()
         self._song = (title, artist)
+        self.player.apply_star_lock()
         # brat mode follows the song shown (task 48). `album` when the
         # source names one; `source` says how sure it is (brat.RANK).
         self.brat.song(artist, title, album, source)

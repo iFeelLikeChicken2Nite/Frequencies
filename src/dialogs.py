@@ -45,6 +45,19 @@ import youtube
 import thumbs
 
 
+def _clippy_art_done():
+    """Using Find counts as tip 14 done (task 219)."""
+    try:
+        from PyQt5.QtWidgets import QApplication
+        for w in QApplication.topLevelWidgets():
+            c = getattr(w, "companion", None)
+            if c is not None:
+                c.done("art")
+                return
+    except Exception:  # noqa: BLE001
+        pass
+
+
 class AddStationDialog(QDialog):
     """Add a station from a hand-typed name + stream URL."""
 
@@ -1217,6 +1230,7 @@ class StationOptionsDialog(QDialog):
         decent image is to go and look for one.
         """
         import webview
+        _clippy_art_done()
         station = getattr(self, "_station", {}) or {}
         query = (station.get("custom_name") or station.get("name") or "").strip()
         if not query:

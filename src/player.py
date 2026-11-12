@@ -46,6 +46,7 @@ if _bundled_libmpv and os.path.exists(_bundled_libmpv):
 
 import mpv
 
+import icyrelay
 import playlists
 
 MAX_VOLUME = 100
@@ -59,6 +60,11 @@ MAX_VOLUME = 100
 # says who it is, as the health check already did. A station's own
 # User-Agent header (Twitch) still wins: ffmpeg sends that one instead.
 STREAM_AGENT = "Frequencies/1.5"
+
+# How long a tune-in gives a stream to make its first sound before the
+# player calls it down (Player.CONNECT_TIMEOUT). The health check gives a
+# stream the same time (workers.probe_stream, build 204, task 247).
+CONNECT_TIMEOUT = 10
 
 
 def system_ca_file():
@@ -847,6 +853,9 @@ def capture_stream_to_wav(url, seconds=6, out_path=None, start_seconds=None,
     # with "captured audio was empty". Resolve it to the real stream
     # first. Falls back to the original URL if anything goes wrong.
     url = playlists.resolve_stream_url(url)
+    # An old SHOUTcast server ("ICY 200 OK") goes through the app's relay:
+    # mpv refuses its answer and recorded nothing (task 220).
+    url = icyrelay.route(url)
 
     force_c_numeric_locale()
     if cancel is None:
@@ -1275,7 +1284,7 @@ class FillerPlayer:
                 handle["tls-verify"] = not bool(cand.get("insecure"))
             except Exception:                   # noqa: BLE001
                 pass
-            path = cand.get("path") or ""
+            path = icyrelay.route(cand.get("path") or "")   # task 220
             entry = None
             try:
                 reply = handle.command(
@@ -1841,7 +1850,7 @@ class Player:
         # Ten seconds: a working stream is audible well inside that, and
         # twenty meant a dead one held the radio silent for a third of a
         # minute before anything moved on.
-        self.CONNECT_TIMEOUT = 10
+        self.CONNECT_TIMEOUT = CONNECT_TIMEOUT
         self._last_progress = None
         self._last_position = None
         # Hand-over bookkeeping for the static (build 47, task 18).
@@ -2487,7 +2496,9 @@ class Player:
                 _log(f"[ad] could not set the station's output: {exc!r}")
             entry, failed = None, None
             try:
-                entry = self._loadfile(url)
+                # An old SHOUTcast server through the app's relay (task
+                # 220); every other address exactly as given.
+                entry = self._loadfile(icyrelay.route(url))
             except Exception as exc:  # noqa: BLE001 - surface any backend error
                 failed = exc
             with self._prop_lock:

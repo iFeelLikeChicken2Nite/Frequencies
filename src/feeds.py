@@ -565,7 +565,8 @@ class Feeds(QObject):
         limit = storage.history_limit(self.lib.settings)
         self.lib.history, added = storage.add_history_entry(
             self.lib.history, track,
-            storage.station_display_name(station or {}), limit=limit)
+            storage.station_display_name(station or {}), limit=limit,
+            nofav=not storage.can_favorite_station(station))
         if added:
             self.lib.save_history()
 

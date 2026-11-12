@@ -465,6 +465,9 @@ class ClassicSession(QObject):
         if not entry:
             return
         song, artist, station, starred = entry[:4]
+        if not starred and self.lib.entry_unfavoritable(
+                {"station": station, "artist": artist, "title": song}):
+            return                      # task 241
         self.lib.set_favourite(
             storage.track_key(artist, song), not starred,
             track={"title": song, "artist": artist}, station_name=station)
@@ -747,7 +750,10 @@ class ClassicSession(QObject):
         w.on_previous = self.playback.previous
         w.on_volume = self._set_volume
         w.on_shuffle = self._set_shuffle
-        w.on_favourite = lambda on: self.win.player.fav_btn.setChecked(on)
+        w.on_favourite = lambda on: (
+            self.win.player.fav_btn.setChecked(on)
+            if self.win.player.fav_btn.isEnabled() or not on else None)
+        w.star_allowed = lambda: self.win.player.fav_btn.isEnabled()
         w.on_favourite_menu = lambda: self._toggle_panel("history")
         w.on_history = lambda: self._back_to_main("history")
         # The logo goes back to the ordinary window, and the close button
@@ -770,7 +776,7 @@ class ClassicSession(QObject):
             self.lib.settings.get("skin_scale", 1)) > 1
         w.closed.connect(self._on_dock_closed)
         w.set_volume(int(self.lib.settings.get("volume", 80)))
-        w.set_shuffle(bool(self.lib.settings.get("shuffle", False)))
+        w.set_shuffle(bool(self.lib.settings.get("shuffle", True)))
         w.twenty_four_hour = bool(self.lib.settings.get("clock_24_hour"))
         w.vis_mode = self.lib.settings.get("skin_vis_mode", "bars")
         w.vis_gain = float(self.lib.settings.get("visualizer_gain", 1.0))

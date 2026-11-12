@@ -40,6 +40,19 @@ def note(station_name, ok, reason=""):
             pass
 
 
+def sweep(text):
+    """One plain line about the launch sweep itself (build 202, task 246):
+    started, finished with counts, or skipped and why. Shown as a row of
+    its own so the user can see the sweep ran even when nothing failed."""
+    _HISTORY.append((time.time(), None, None, text))
+    del _HISTORY[:-MAX_ROWS]
+    if _WINDOW is not None:
+        try:
+            _WINDOW.record(None, None, text)
+        except RuntimeError:                    # window already deleted
+            pass
+
+
 class HealthLogWindow(QDialog):
     """Every background check, newest first."""
 
@@ -95,19 +108,25 @@ class HealthLogWindow(QDialog):
         is happening now, and scrolling to the bottom to find it would be
         the wrong way round.
         """
-        self._checked += 1
-        if not ok:
-            self._failed += 1
+        sweep_line = ok is None and station_name is None
+        if not sweep_line:
+            self._checked += 1
+            if not ok:
+                self._failed += 1
 
         self.table.insertRow(0)
         import clock
-        cells = (clock.fmt(when or time.time(), seconds=True),
-                 station_name or "(unnamed)",
-                 "answered" if ok else "no answer",
-                 reason or "")
+        if sweep_line:
+            cells = (clock.fmt(when or time.time(), seconds=True),
+                     "Launch check", "", reason or "")
+        else:
+            cells = (clock.fmt(when or time.time(), seconds=True),
+                     station_name or "(unnamed)",
+                     "answered" if ok else "no answer",
+                     reason or "")
         for column, text in enumerate(cells):
             item = QTableWidgetItem(text)
-            if not ok:
+            if not ok and not sweep_line:
                 item.setForeground(Qt.red if column == 2 else item.foreground())
             self.table.setItem(0, column, item)
 
@@ -126,7 +145,7 @@ class HealthLogWindow(QDialog):
         only_bad = self.only_failures.isChecked()
         for row in range(self.table.rowCount()):
             item = self.table.item(row, 2)
-            failed = item is not None and item.text() != "answered"
+            failed = (item is not None and item.text() == "no answer")
             self.table.setRowHidden(row, only_bad and not failed)
 
     def clear(self):

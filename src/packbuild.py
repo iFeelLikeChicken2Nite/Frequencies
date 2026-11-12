@@ -47,12 +47,15 @@ def slug(text):
 
 def text_fixes(dev):
     """{artist: {text fields}} from the developer's corrections."""
+    from artistinfo import strip_citations
     out = {}
     for key, entry in (dev or {}).items():
         if not isinstance(entry, dict):
             continue
         text = {k: str(entry[k]).strip() for k in TEXT_FIELDS
                 if str(entry.get(k) or "").strip()}
+        if "bio" in text:                   # no citation marks (task 218)
+            text["bio"] = strip_citations(text["bio"]).strip()
         if text:
             out[key.strip().lower()] = text
     return out

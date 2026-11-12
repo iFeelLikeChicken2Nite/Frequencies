@@ -137,7 +137,8 @@ TIPS = {
     "twitch": ("12", "Twitch streams have forced 30-second ads, so by "
                      "default, Frequencies will cover them. You can change "
                      "that in the station options.", "row"),
-    # Asked 2026-10-19 (task 173): every time a frequency is added.
+    # Asked 2026-10-19 (task 173); once only since build 158 (task 219):
+    # the ✕ or using Find closes it for good.
     "art": ("14", "Frequencies can find the right station art for this "
                   "frequency! Open its station settings and click \"Find\" "
                   "on the Display tab.", "row"),
@@ -159,9 +160,10 @@ TIPS = {
                      "current lyric line to sync them up again.", "inside"),
 }
 
-# Tips that come back each time they are asked for (task 173): closing
-# one ends that showing only.
-REPEATING = {"art"}
+# Tips that come back each time they are asked for: closing one ends that
+# showing only. None now: tip 14 came back after every new frequency
+# (task 173) and the user found it nagging (task 219), so it shows once.
+REPEATING = set()
 
 # Tips that ask Yes or No, and what he says after each answer.
 ASKS = {
@@ -689,6 +691,8 @@ class Companion:
         else:
             self.settings[SETTING] = sorted(self.closed() | {tip_id})
             self.save()
+            if tip_id in self.wanted:
+                self.wanted.remove(tip_id)
         crashlog.write(f"[companion] tip {tip_id!r} closed")
         self.current = None
         self.last_close = time.monotonic()
